@@ -50,6 +50,24 @@ const DB = {
   },
 
   // ════════════════════════════════════════════════════════
+  // INSTALADORES  (roster the app's dropdown is built from — kept in
+  // Supabase, not ClickUp, because the ClickUp API can't add options to
+  // its INSTALADORES dropdown field. Names that DO match an existing
+  // ClickUp option still get mirrored there; the rest just live here.)
+  // ════════════════════════════════════════════════════════
+  async getInstaladores() {
+    return this._q(sb => sb.from('instaladores').select('*').eq('activo', true).order('nombre'));
+  },
+
+  async addInstalador(nombre) {
+    return this._q(sb => sb.from('instaladores').upsert({ nombre, activo: true }, { onConflict: 'nombre' }));
+  },
+
+  async setInstaladorActivo(nombre, activo) {
+    return this._q(sb => sb.from('instaladores').update({ activo }).eq('nombre', nombre));
+  },
+
+  // ════════════════════════════════════════════════════════
   // BITACORA_INSTALACION  (event log per OP: notas, pausas, cambios en
   // sitio, reprocesos)
   // ════════════════════════════════════════════════════════
@@ -107,6 +125,12 @@ const DB = {
       faltante         text,
       dias_estimados   integer,
       updated_at       timestamptz not null default now()
+    );
+
+    create table if not exists instaladores (
+      nombre           text primary key,
+      activo           boolean not null default true,
+      created_at       timestamptz not null default now()
     );
   `,
 };

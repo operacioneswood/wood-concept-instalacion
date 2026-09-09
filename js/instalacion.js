@@ -20,10 +20,15 @@ const Instalacion = {
   _DEFAULT_DIAS_ESTIMADOS: 2,
   _DIAS_LIMPIEZA: 4,
 
-  render({ installOps, fieldIds, instaladoresList, dbData }) {
+  render({ installOps, fieldIds, dbData }) {
     this._ops          = installOps || [];
     this._fieldIds      = fieldIds || {};
-    this._instaladores = instaladoresList || [];
+    // The dropdown is built from Supabase (dbData.instaladores), not
+    // ClickUp — the ClickUp INSTALADORES field only has ~10 options and
+    // its API can't add more. fieldIds.instaladorOpts (still from
+    // ClickUp) is used separately, only to mirror a name back when it
+    // happens to already exist as a ClickUp option.
+    this._instaladores = (dbData?.instaladores || []).map(r => r.nombre);
     this._dbData        = dbData;
     this._draw();
   },

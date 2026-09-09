@@ -13,7 +13,7 @@ const App = {
     this._setupSettings();
     this._setupNav();
 
-    this._dbData = { asignaciones: [], bitacoraInstalacion: [], instalacionOps: [] };
+    this._dbData = { asignaciones: [], bitacoraInstalacion: [], instalacionOps: [], instaladores: [] };
     await this._loadDbData();
 
     const cached = PlantaAPI._getCache();
@@ -31,15 +31,17 @@ const App = {
 
   async _loadDbData() {
     try {
-      const [asignaciones, bitacoraInstalacion, instalacionOps] = await Promise.all([
+      const [asignaciones, bitacoraInstalacion, instalacionOps, instaladores] = await Promise.all([
         DB.getAsignaciones(),
         DB.getBitacoraInstalacion().catch(e => { console.warn('[App] bitacora_instalacion table missing?', e.message); return []; }),
         DB.getInstalacionOps().catch(e => { console.warn('[App] instalacion_ops table missing?', e.message); return []; }),
+        DB.getInstaladores().catch(e => { console.warn('[App] instaladores table missing?', e.message); return []; }),
       ]);
       this._dbData = {
         asignaciones:        asignaciones        || [],
         bitacoraInstalacion: bitacoraInstalacion || [],
         instalacionOps:      instalacionOps      || [],
+        instaladores:        instaladores        || [],
       };
     } catch (e) {
       console.error('[App] DB load failed:', e.message);
