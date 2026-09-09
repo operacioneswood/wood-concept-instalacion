@@ -11,6 +11,7 @@ const App = {
   async init() {
     DB.init();
     this._setupSettings();
+    this._setupNav();
 
     this._dbData = { asignaciones: [], bitacoraInstalacion: [], instalacionOps: [] };
     await this._loadDbData();
@@ -86,6 +87,19 @@ const App = {
   _renderAll() {
     if (!this._data) return;
     Instalacion.render({ ...this._data, dbData: this._dbData });
+    Cronograma.render({ ...this._data });
+  },
+
+  // ── Navigation ────────────────────────────────────────────
+  _setupNav() {
+    document.querySelectorAll('.nav-btn[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.nav-btn[data-tab]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.tab-screen').forEach(s => s.classList.remove('tab-active'));
+        el('tab-' + btn.dataset.tab)?.classList.add('tab-active');
+      });
+    });
   },
 
   // ── Settings modal ───────────────────────────────────────

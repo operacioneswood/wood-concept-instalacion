@@ -29,12 +29,13 @@ const PlantaAPI = {
       const c = JSON.parse(raw);
       if (!c || !c.timestamp || !Array.isArray(c.installOps)) return null;
       c.installOps = c.installOps.map(op => this._rehydrateOp(op));
+      c.ops        = (c.ops || []).map(op => this._rehydrateOp(op));
       return c;
     } catch { return null; }
   },
 
   _rehydrateOp(op) {
-    const dateKeys = ['fechaEmpaque', 'envioInstalacion', 'inicioInstalacion'];
+    const dateKeys = ['fechaEmpaque', 'envioInstalacion', 'inicioInstalacion', 'envioFabrica', 'salidaFabrica'];
     const out = { ...op };
     for (const k of dateKeys) {
       if (out[k] && typeof out[k] === 'string') out[k] = new Date(out[k]);
@@ -151,6 +152,7 @@ const PlantaAPI = {
       estatusInstalacionOpts,
       instaladores:       find('instaladores', 'instalador'),
       instaladorOpts,
+      envioFabrica:       find('envio a fabrica', 'envío a fabrica', 'envio fabrica', 'ingreso fabrica', 'entrada fabrica', 'fecha fabrica', 'fecha envio', 'fecha ingreso'),
     };
 
     return { fieldIds, instaladoresList: [...instaladoresSet].sort() };
@@ -201,6 +203,8 @@ const PlantaAPI = {
       inicioInstalacion:  getDate(fieldIds.inicioInstalacion),
       estatusInstalacion: getDropdownName(fieldIds.estatusInstalacion),
       instalador:         getDropdownName(fieldIds.instaladores),
+      envioFabrica:       getDate(fieldIds.envioFabrica),
+      salidaFabrica:      tsToDate(raw.due_date || null),
     };
   },
 
@@ -256,16 +260,21 @@ const PlantaAPI = {
 
     const { fieldIds, instaladoresList } = this._detectFields(rawTasks);
 
-    // Build a node map for chain traversal: id → { name, parent }
+    // Build a node map for chain traversal: id → { name, parent, status }
     const nodeMap = {};
     for (const t of rawTasks) {
-      nodeMap[t.id] = { name: t.name || '', parent: t.parent || null };
+      nodeMap[t.id] = { name: t.name || '', parent: t.parent || null, status: normStr(t.status?.status || '') };
     }
-    const findRootProject = id => {
+    // Walks up to the root (project-level) task and returns its id, name
+    // AND status — the project's own status is what actually decides
+    // whether it belongs in this app, not any individual piece's status
+    // (a piece can carry a stale "empaque"/"en instalación" tag long
+    // after its project was closed out as "proyecto terminado").
+    const findRoot = id => {
       const seenIds = new Set();
       let cur = nodeMap[id];
       while (cur) {
-        if (!cur.parent) return cur.name;
+        if (!cur.parent) return cur;
         if (seenIds.has(cur.parent)) return null;
         seenIds.add(cur.parent);
         cur = nodeMap[cur.parent];
@@ -273,21 +282,24 @@ const PlantaAPI = {
       return null;
     };
 
-    const installOps = rawTasks
-      .filter(t => t.parent && INSTALL_STATUSES.has(normStr(t.status?.status || '')))
+    const buildOps = (statusFilter) => rawTasks
+      .filter(t => t.parent && statusFilter.has(normStr(t.status?.status || '')))
       .map(t => {
-        const rootProject = findRootProject(t.id);
-        if (!rootProject) return null;
+        const root = findRoot(t.id);
+        if (!root || !PROJECT_ACTIVE_STATUSES.has(root.status)) return null;
         const op = this._parseTask(t, fieldIds);
-        op.project  = rootProject;
+        op.project  = root.name;
         op.parentId = t.parent;
         return op;
       })
       .filter(Boolean);
 
-    prog(`${installOps.length} OPs en empaque/instalación encontrados.`);
+    const installOps = buildOps(INSTALL_STATUSES);
+    const ops         = buildOps(ACTIVE_STATUSES);
 
-    const result = { installOps, instaladoresList, fieldIds, lastSync: Date.now() };
+    prog(`${installOps.length} OPs en empaque/instalación, ${ops.length} en fábrica.`);
+
+    const result = { installOps, ops, instaladoresList, fieldIds, lastSync: Date.now() };
     this._setCache(result);
     return result;
   },

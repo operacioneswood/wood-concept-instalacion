@@ -19,6 +19,10 @@
       <span class="brand-sep">·</span>
       <span class="brand-sub">Instalación</span>
     </div>
+    <div class="nav-links">
+      <button class="nav-btn active" data-tab="instalacion">Instalación</button>
+      <button class="nav-btn" data-tab="cronograma">Cronograma Fábrica</button>
+    </div>
     <div class="nav-right">
       <span id="sync-status" class="sync-status"></span>
       <button class="btn-icon" id="btn-refresh" title="Forzar sincronización">↻</button>
@@ -27,7 +31,12 @@
   </nav>
 
   <div class="app-body">
-    <div id="instalacion-container"></div>
+    <div id="tab-instalacion" class="tab-screen tab-active">
+      <div id="instalacion-container"></div>
+    </div>
+    <div id="tab-cronograma" class="tab-screen">
+      <div id="cronograma-container"></div>
+    </div>
   </div>
 
   <!-- ══════════════ SETTINGS MODAL ══════════════ -->
@@ -61,6 +70,7 @@
   <script src="js/db.js"></script>
   <script src="js/clickup.js"></script>
   <script src="js/instalacion.js"></script>
+  <script src="js/cronograma.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

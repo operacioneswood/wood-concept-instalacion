@@ -7,6 +7,26 @@
 // "en instalacion" = en instalación ahora mismo.
 const INSTALL_STATUSES = new Set(['empaque', 'en instalacion']);
 
+// Root-project statuses this whole app is allowed to show. An OP piece can
+// carry a stale "empaque"/"en instalación" status even after its project
+// is fully closed out — gating on the project's own status (not just the
+// piece's) is what keeps finished projects out of the bitácora.
+const PROJECT_ACTIVE_STATUSES = new Set(['fabrica', 'en instalacion']);
+
+// Fábrica statuses shown read-only in the Cronograma tab (same set
+// wood-concept-planta tracks as "in plant").
+const ACTIVE_STATUSES = new Set(['fabrica', 'corte', 'enchape', 'ebanisteria', 'en ebanisteria', 'en pintura', 'pendiente de revision', 'reproceso', 'pendiente por obra', 'pendiente chapilla']);
+
+const STATUS_DISPLAY = {
+  'fabrica':               { label: 'Fábrica',              cls: 'sb-green'  },
+  'en ebanisteria':        { label: 'En Ebanistería',       cls: 'sb-amber'  },
+  'en pintura':            { label: 'En Pintura',           cls: 'sb-purple' },
+  'pendiente de revision': { label: 'Pend. Revisión',       cls: 'sb-gray'   },
+  'reproceso':             { label: 'Reproceso',            cls: 'sb-repro'  },
+  'pendiente por obra':    { label: 'Pend. por Obra',       cls: 'sb-obra'   },
+  'pendiente chapilla':    { label: 'Pend. Chapilla',       cls: 'sb-chapilla' },
+};
+
 const INSTALL_STATUS_DISPLAY = {
   'empaque':        { label: 'Empaque',        cls: 'sb-obra'   },
   'en instalacion': { label: 'En Instalación', cls: 'sb-purple' },
