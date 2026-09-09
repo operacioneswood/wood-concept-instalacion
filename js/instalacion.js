@@ -16,6 +16,9 @@ const Instalacion = {
   _expanded:      new Set(),       // op ids showing the bitácora panel
   _draftTipo:     {},              // op_id → selected tipo in the compose form
   _draftTexto:    {},              // op_id → draft comment text
+  _ganttOpen:     new Set(),       // project names showing the projected Gantt
+  _DEFAULT_DIAS_ESTIMADOS: 2,
+  _DIAS_LIMPIEZA: 4,
 
   render({ installOps, fieldIds, instaladoresList, dbData }) {
     this._ops          = installOps || [];
@@ -153,11 +156,124 @@ const Instalacion = {
       <div class="cron-block">
         <div class="cron-block-hdr">
           <span class="cron-hdr-name">${esc(project)}</span>
-          <span class="cron-hdr-meta"><span class="cron-hdr-count">${projOps.length} OP${projOps.length !== 1 ? 's' : ''}</span></span>
+          <span class="cron-hdr-meta">
+            <span class="cron-hdr-count">${projOps.length} OP${projOps.length !== 1 ? 's' : ''}</span>
+            <button class="btn-secondary btn-sm inst-gantt-toggle" data-proj="${esc(project)}">📅 Cronograma</button>
+          </span>
         </div>
+        ${this._ganttOpen.has(project) ? this._ganttHtml(project, projOps) : ''}
         ${projOps.map(op => this._opCardHtml(op)).join('')}
       </div>
     `).join('');
+  },
+
+  // ── 📅 Cronograma proyectado (secuencial, tipo Gantt) ────────
+  //
+  // Igual al patrón que ya usaba el coordinador en MS Project: cada OP
+  // se instala una detrás de otra (no en paralelo), con una duración
+  // estimada en días hábiles; el fin de una es el inicio de la
+  // siguiente. Termina con un buffer de "limpieza y retoques".
+
+  _addBusinessDays(date, days) {
+    const d = new Date(date);
+    let added = 0;
+    while (added < days) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow !== 0 && dow !== 6) added++;
+    }
+    return d;
+  },
+
+  _projectedSchedule(projOps) {
+    const starts = projOps.map(op => op.envioInstalacion || op.fechaEmpaque).filter(Boolean);
+    let cursor = starts.length ? new Date(Math.min(...starts)) : new Date();
+    const items = [];
+    for (const op of projOps) {
+      const dias = this._installRow(op.id)?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS;
+      const start = new Date(cursor);
+      const finish = this._addBusinessDays(start, dias);
+      items.push({ op, start, finish, dias });
+      cursor = finish;
+    }
+    const limpiezaStart  = new Date(cursor);
+    const limpiezaFinish = this._addBusinessDays(limpiezaStart, this._DIAS_LIMPIEZA);
+    return { items, limpiezaStart, limpiezaFinish };
+  },
+
+  _ganttHtml(project, projOps) {
+    const { items, limpiezaStart, limpiezaFinish } = this._projectedSchedule(projOps);
+    if (!items.length) return '';
+
+    const rangeStart = items[0].start;
+    const totalDays  = Math.max(1, daysBetween(rangeStart, limpiezaFinish));
+    const pxPerDay   = 26;
+    const labelW     = 260;
+    const chartW     = totalDays * pxPerDay;
+    const rowH       = 28;
+    const rows       = items.length + 1; // + limpieza row
+    const svgH       = rows * rowH + 30;
+    const svgW       = labelW + chartW + 20;
+
+    const xFor = d => labelW + daysBetween(rangeStart, d) * pxPerDay;
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    let bars = '';
+    // Weekend shading
+    for (let i = 0; i <= totalDays; i++) {
+      const d = new Date(rangeStart); d.setDate(d.getDate() + i);
+      if (d.getDay() === 0 || d.getDay() === 6) {
+        bars += `<rect x="${xFor(d)}" y="20" width="${pxPerDay}" height="${rows*rowH}" fill="#00000006"/>`;
+      }
+    }
+    // Month/day axis ticks (every 7 days)
+    for (let i = 0; i <= totalDays; i += 7) {
+      const d = new Date(rangeStart); d.setDate(d.getDate() + i);
+      bars += `<text x="${xFor(d)+2}" y="14" font-size="10" fill="#9b9490">${this._fmtShort(d)}</text>`;
+      bars += `<line x1="${xFor(d)}" y1="18" x2="${xFor(d)}" y2="${svgH}" stroke="#ece8e2" stroke-width="1"/>`;
+    }
+    // Today marker
+    if (today >= rangeStart && today <= limpiezaFinish) {
+      bars += `<line x1="${xFor(today)}" y1="18" x2="${xFor(today)}" y2="${svgH}" stroke="#c41c1c" stroke-width="1.5" stroke-dasharray="3,2"/>`;
+    }
+
+    items.forEach((it, i) => {
+      const y  = 26 + i * rowH;
+      const x1 = xFor(it.start), x2 = xFor(it.finish);
+      const w  = Math.max(4, x2 - x1);
+      const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
+      bars += `
+        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f">${esc(label.length > 42 ? label.slice(0,41)+'…' : label)}</text>
+        <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="#3b82f6" opacity="0.85">
+          <title>${esc(it.op.name)}: ${this._fmtShort(it.start)} → ${this._fmtShort(it.finish)} (${it.dias}d)</title>
+        </rect>
+        <text x="${x2 + 6}" y="${y + rowH/2 + 4}" font-size="9.5" fill="#9b9490">${it.dias}d</text>
+      `;
+    });
+    // Limpieza row
+    {
+      const i = items.length;
+      const y = 26 + i * rowH;
+      const x1 = xFor(limpiezaStart), x2 = xFor(limpiezaFinish);
+      const w  = Math.max(4, x2 - x1);
+      bars += `
+        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f" font-style="italic">Limpieza y retoques</text>
+        <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="#9b9490" opacity="0.7"/>
+      `;
+    }
+
+    const svg = `<svg width="${svgW}" height="${svgH}" style="display:block;overflow:visible">${bars}</svg>`;
+
+    return `
+      <div class="inst-gantt">
+        <div class="inst-gantt-hdr">
+          <span>Inicio proyectado: <strong>${this._fmtShort(rangeStart)}</strong></span>
+          <span>Fin proyectado (con limpieza): <strong>${this._fmtShort(limpiezaFinish)}</strong></span>
+          <span class="cron-faint">Días estimados por OP editables abajo, en cada tarjeta.</span>
+        </div>
+        <div style="overflow-x:auto;padding-bottom:6px">${svg}</div>
+      </div>
+    `;
   },
 
   _opCardHtml(op) {
@@ -234,7 +350,10 @@ const Instalacion = {
               <span>Inicio instalación: <strong>${op.inicioInstalacion ? this._fmtShort(op.inicioInstalacion) : '—'}</strong></span>
               <span>Fin instalación: <strong>${row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—'}</strong></span>
             </div>
-            ${estatus !== 'COMPLETADO' ? `<button class="btn-primary btn-sm inst-btn-completar" data-op="${esc(op.id)}">✔ Marcar instalación completa</button>` : ''}
+            <label class="field-label">Días estimados (cronograma)</label>
+            <input type="number" min="1" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
+              value="${row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS}" style="max-width:80px">
+            ${estatus !== 'COMPLETADO' ? `<button class="btn-primary btn-sm inst-btn-completar" data-op="${esc(op.id)}" style="margin-top:8px">✔ Marcar instalación completa</button>` : ''}
           </div>
         </div>
 
@@ -279,6 +398,26 @@ const Instalacion = {
         const id = btn.dataset.toggle;
         if (this._expanded.has(id)) this._expanded.delete(id); else this._expanded.add(id);
         this._draw();
+      });
+    });
+
+    wrap.querySelectorAll('.inst-gantt-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const proj = btn.dataset.proj;
+        if (this._ganttOpen.has(proj)) this._ganttOpen.delete(proj); else this._ganttOpen.add(proj);
+        this._draw();
+      });
+    });
+
+    wrap.querySelectorAll('.inst-dias-estimados-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const opId = inp.dataset.op;
+        const dias = Math.max(1, parseInt(inp.value, 10) || this._DEFAULT_DIAS_ESTIMADOS);
+        try {
+          const saved = await DB.upsertInstalacionOp({ op_id: opId, dias_estimados: dias });
+          this._upsertLocalInstalacionOp(saved);
+          this._draw();
+        } catch (e) { console.warn('[Instalacion] dias_estimados save:', e.message); }
       });
     });
 

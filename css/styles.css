@@ -1851,6 +1851,9 @@ body.has-pending-shift .app-body { padding-top: 0; }
 .inst-bitacora-texto { flex: 1; }
 .inst-bitacora-fecha { color: var(--muted); font-size: 11px; flex-shrink: 0; }
 
+.inst-gantt { padding: 10px 14px; border-top: 1px solid var(--divider); border-bottom: 1px solid var(--divider); background: #faf8f5; }
+.inst-gantt-hdr { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; margin-bottom: 8px; color: var(--text); }
+
 @media (max-width: 900px) {
   .inst-detail-row { grid-template-columns: 1fr; }
   .inst-bitacora-compose { grid-template-columns: 1fr; }

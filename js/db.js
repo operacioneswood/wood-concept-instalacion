@@ -76,11 +76,12 @@ const DB = {
     return this._q(sb => sb.from('instalacion_ops').select('*'));
   },
 
-  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante }) {
+  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados }) {
     const row = { op_id, updated_at: new Date().toISOString() };
     if (fecha_fin       !== undefined) row.fecha_fin      = fecha_fin;
     if (llego_completa  !== undefined) row.llego_completa = llego_completa;
     if (faltante        !== undefined) row.faltante       = faltante;
+    if (dias_estimados  !== undefined) row.dias_estimados = dias_estimados;
     return this._q(sb => sb.from('instalacion_ops').upsert(row, { onConflict: 'op_id' }).select().single());
   },
 
@@ -104,6 +105,7 @@ const DB = {
       fecha_fin        date,
       llego_completa   boolean,
       faltante         text,
+      dias_estimados   integer,
       updated_at       timestamptz not null default now()
     );
   `,
