@@ -151,10 +151,12 @@ const DB = {
     values ('instalacion-fotos', 'instalacion-fotos', true)
     on conflict (id) do nothing;
 
-    create policy if not exists "Public read instalacion-fotos" on storage.objects
+    drop policy if exists "Public read instalacion-fotos" on storage.objects;
+    create policy "Public read instalacion-fotos" on storage.objects
       for select using (bucket_id = 'instalacion-fotos');
 
-    create policy if not exists "Anon upload instalacion-fotos" on storage.objects
+    drop policy if exists "Anon upload instalacion-fotos" on storage.objects;
+    create policy "Anon upload instalacion-fotos" on storage.objects
       for insert with check (bucket_id = 'instalacion-fotos');
   `,
 };
