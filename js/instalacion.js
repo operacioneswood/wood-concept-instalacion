@@ -16,6 +16,8 @@ const Instalacion = {
   _expanded:      new Set(),       // op ids showing the bitácora panel
   _draftTipo:     {},              // op_id → selected tipo in the compose form
   _draftTexto:    {},              // op_id → draft comment text
+  _draftFoto:     {},              // op_id → uploaded photo URL, staged for the next Guardar
+  _fotoUploading: {},              // op_id → true while a photo upload is in flight
   _ganttOpen:     new Set(),       // project names showing the projected Gantt
   _DEFAULT_DIAS_ESTIMADOS: 2,
   _DIAS_LIMPIEZA: 4,
@@ -351,8 +353,12 @@ const Instalacion = {
           <div class="inst-detail-col">
             <label class="field-label">Fechas</label>
             <div class="inst-dates">
-              <span>Envío a sitio: <strong>${op.envioInstalacion ? this._fmtShort(op.envioInstalacion) : '—'}</strong></span>
-              <span>Inicio instalación: <strong>${op.inicioInstalacion ? this._fmtShort(op.inicioInstalacion) : '—'}</strong></span>
+              <span>Envío a sitio: <strong>${op.envioInstalacion ? this._fmtShort(op.envioInstalacion) : '—'}</strong>
+                ${!op.envioInstalacion ? `<button class="btn-secondary btn-sm inst-btn-marcar-envio" data-op="${esc(op.id)}">Marcar hoy</button>` : ''}
+              </span>
+              <span>Inicio instalación: <strong>${op.inicioInstalacion ? this._fmtShort(op.inicioInstalacion) : '—'}</strong>
+                ${!op.inicioInstalacion ? `<button class="btn-secondary btn-sm inst-btn-marcar-inicio" data-op="${esc(op.id)}">Marcar hoy</button>` : ''}
+              </span>
               <span>Fin instalación: <strong>${row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—'}</strong></span>
             </div>
             <label class="field-label">Días estimados (cronograma)</label>
@@ -374,6 +380,17 @@ const Instalacion = {
               <option value="reproceso"   ${tipo==='reproceso'?'selected':''}>⚠ Reproceso</option>
             </select>
             <textarea class="field-input inst-texto-inp" data-op="${esc(op.id)}" placeholder="Comentario...">${esc(texto)}</textarea>
+            <div class="inst-foto-row">
+              <label class="btn-secondary btn-sm inst-foto-label" for="foto-${esc(op.id)}">
+                ${this._fotoUploading[op.id] ? '⏳ Subiendo...' : this._draftFoto[op.id] ? '✅ Foto lista' : '📷 Tomar/adjuntar foto'}
+              </label>
+              <input type="file" accept="image/*" capture="environment" id="foto-${esc(op.id)}"
+                class="inst-foto-inp" data-op="${esc(op.id)}" style="display:none">
+              ${this._draftFoto[op.id] ? `
+                <img src="${esc(this._draftFoto[op.id])}" class="inst-foto-thumb">
+                <button class="inst-foto-remove" data-op="${esc(op.id)}">✕</button>
+              ` : ''}
+            </div>
             <div class="inst-compose-actions">
               ${tipo === 'reproceso' ? `<button class="btn-secondary btn-sm inst-btn-reproceso-form" data-op="${esc(op.id)}">📋 Llenar formulario de reproceso</button>` : ''}
               <button class="btn-primary btn-sm inst-btn-guardar" data-op="${esc(op.id)}">Guardar</button>
@@ -384,6 +401,7 @@ const Instalacion = {
               <li class="inst-bitacora-item ${e.es_reproceso ? 'inst-bitacora-reproceso' : ''}">
                 <span class="inst-bitacora-tipo">${this._tipoIcon(e.tipo)}</span>
                 <span class="inst-bitacora-texto">${esc(e.texto || '')}</span>
+                ${e.foto_url ? `<a href="${esc(e.foto_url)}" target="_blank" rel="noopener"><img src="${esc(e.foto_url)}" class="inst-foto-thumb"></a>` : ''}
                 <span class="inst-bitacora-fecha">${new Date(e.created_at).toLocaleDateString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
               </li>
             `).join('') || '<li class="cron-faint">Sin entradas todavía.</li>'}
@@ -397,7 +415,34 @@ const Instalacion = {
     return { nota: '📝', inicio: '▶', pausa: '⏸', reanudado: '▶', cambio_sitio: '🔁', reproceso: '⚠', fin: '✔' }[tipo] || '📝';
   },
 
+  // Shared by "Marcar hoy" buttons for envío/inicio de instalación —
+  // writes today's date to the given ClickUp date field.
+  async _marcarFechaHoy(btn, fieldKey, opField) {
+    const opId = btn.dataset.op;
+    const op = this._ops.find(o => o.id === opId);
+    const fieldId = this._fieldIds[fieldKey];
+    if (!op || !fieldId) return;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '...';
+    try {
+      await PlantaAPI.setField(opId, fieldId, Date.now());
+      op[opField] = new Date();
+      PlantaAPI.clearCache();
+      this._draw();
+    } catch (e) {
+      alert('Error: ' + e.message);
+      btn.disabled = false; btn.textContent = orig;
+    }
+  },
+
   _bindInstalacion(wrap) {
+    wrap.querySelectorAll('.inst-btn-marcar-envio').forEach(btn => {
+      btn.addEventListener('click', () => this._marcarFechaHoy(btn, 'envioInstalacion', 'envioInstalacion'));
+    });
+    wrap.querySelectorAll('.inst-btn-marcar-inicio').forEach(btn => {
+      btn.addEventListener('click', () => this._marcarFechaHoy(btn, 'inicioInstalacion', 'inicioInstalacion'));
+    });
+
     wrap.querySelectorAll('[data-toggle]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.toggle;
@@ -514,18 +559,46 @@ const Instalacion = {
         const opId  = btn.dataset.op;
         const tipo  = this._draftTipo[opId] || 'nota';
         const texto = (this._draftTexto[opId] || '').trim();
-        if (!texto) return;
+        const fotoUrl = this._draftFoto[opId] || null;
+        if (!texto && !fotoUrl) return;
         btn.disabled = true;
         try {
-          const saved = await DB.addBitacoraEntry({ op_id: opId, tipo, texto, es_reproceso: tipo === 'reproceso' });
+          const saved = await DB.addBitacoraEntry({ op_id: opId, tipo, texto: texto || null, es_reproceso: tipo === 'reproceso', foto_url: fotoUrl });
           this._dbData.bitacoraInstalacion.unshift(saved);
           delete this._draftTexto[opId];
+          delete this._draftFoto[opId];
           this._draftTipo[opId] = 'nota';
           this._draw();
         } catch (e) {
           alert('Error: ' + e.message);
           btn.disabled = false;
         }
+      });
+    });
+
+    wrap.querySelectorAll('.inst-foto-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const opId = inp.dataset.op;
+        const file = inp.files?.[0];
+        if (!file) return;
+        this._fotoUploading[opId] = true;
+        this._draw();
+        try {
+          const url = await DB.uploadFoto(opId, file);
+          this._draftFoto[opId] = url;
+        } catch (e) {
+          alert('No se pudo subir la foto: ' + e.message);
+        } finally {
+          delete this._fotoUploading[opId];
+          this._draw();
+        }
+      });
+    });
+
+    wrap.querySelectorAll('.inst-foto-remove').forEach(btn => {
+      btn.addEventListener('click', () => {
+        delete this._draftFoto[btn.dataset.op];
+        this._draw();
       });
     });
 

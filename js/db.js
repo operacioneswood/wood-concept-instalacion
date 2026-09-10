@@ -75,15 +75,27 @@ const DB = {
     return this._q(sb => sb.from('bitacora_instalacion').select('*').order('created_at', { ascending: false }));
   },
 
-  async addBitacoraEntry({ op_id, tipo = 'nota', texto = null, autor = null, es_reproceso = false }) {
+  async addBitacoraEntry({ op_id, tipo = 'nota', texto = null, autor = null, es_reproceso = false, foto_url = null }) {
     return this._q(sb => sb.from('bitacora_instalacion')
-      .insert({ op_id, tipo, texto, autor, es_reproceso })
+      .insert({ op_id, tipo, texto, autor, es_reproceso, foto_url })
       .select().single());
   },
 
   async deleteBitacoraEntry(id) {
     const { error } = await this._sb.from('bitacora_instalacion').delete().eq('id', id);
     if (error) throw error;
+  },
+
+  // ── Fotos (Supabase Storage bucket "instalacion-fotos") ─────
+  FOTOS_BUCKET: 'instalacion-fotos',
+
+  async uploadFoto(opId, file) {
+    const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase();
+    const path = `${opId}/${Date.now()}.${ext}`;
+    const { error } = await this._sb.storage.from(this.FOTOS_BUCKET).upload(path, file, { contentType: file.type });
+    if (error) throw error;
+    const { data } = this._sb.storage.from(this.FOTOS_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
   },
 
   // ════════════════════════════════════════════════════════
@@ -132,5 +144,17 @@ const DB = {
       activo           boolean not null default true,
       created_at       timestamptz not null default now()
     );
+
+    alter table bitacora_instalacion add column if not exists foto_url text;
+
+    insert into storage.buckets (id, name, public)
+    values ('instalacion-fotos', 'instalacion-fotos', true)
+    on conflict (id) do nothing;
+
+    create policy if not exists "Public read instalacion-fotos" on storage.objects
+      for select using (bucket_id = 'instalacion-fotos');
+
+    create policy if not exists "Anon upload instalacion-fotos" on storage.objects
+      for insert with check (bucket_id = 'instalacion-fotos');
   `,
 };

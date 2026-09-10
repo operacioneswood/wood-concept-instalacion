@@ -102,6 +102,24 @@ const App = {
         el('tab-' + btn.dataset.tab)?.classList.add('tab-active');
       });
     });
+
+    // ── Tablet / Desktop mode toggle ─────────────────────────
+    const tabBtn = el('btn-tablet-toggle');
+    if (tabBtn) {
+      const apply = isTablet => {
+        document.body.classList.toggle('tablet', isTablet);
+        tabBtn.textContent = isTablet ? '💻' : '📱';
+        tabBtn.title       = isTablet ? 'Cambiar a modo computadora' : 'Cambiar a modo tablet';
+      };
+      const saved = localStorage.getItem('wi_tablet_mode');
+      const autoTablet = saved === null && window.innerWidth <= 1024;
+      apply(saved === '1' || autoTablet);
+      tabBtn.addEventListener('click', () => {
+        const nowTablet = !document.body.classList.contains('tablet');
+        localStorage.setItem('wi_tablet_mode', nowTablet ? '1' : '0');
+        apply(nowTablet);
+      });
+    }
   },
 
   // ── Settings modal ───────────────────────────────────────
