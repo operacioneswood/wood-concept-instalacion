@@ -19,6 +19,7 @@ const Instalacion = {
   _draftFoto:     {},              // op_id → uploaded photo URL, staged for the next Guardar
   _fotoUploading: {},              // op_id → true while a photo upload is in flight
   _ganttOpen:     new Set(),       // project names showing the projected Gantt
+  _searchQuery:   '',              // "En Instalación" search box value
   _DEFAULT_DIAS_ESTIMADOS: 2,
   _DIAS_LIMPIEZA: 4,
 
@@ -99,6 +100,7 @@ const Instalacion = {
 
     this._bindEmpaque(wrap);
     this._bindInstalacion(wrap);
+    this._bindSearch(wrap);
   },
 
   // ── 📦 Empaque (ready to ship) ───────────────────────────────
@@ -132,6 +134,27 @@ const Instalacion = {
     `).join('');
   },
 
+  // Same pattern as fábrica's Asignación search: filters by toggling
+  // display, no full re-render — keeps focus/cursor in the box while typing.
+  _bindSearch(wrap) {
+    const input = wrap.querySelector('#inst-search');
+    if (!input) return;
+    const apply = () => {
+      const q = input.value.toLowerCase().trim();
+      this._searchQuery = input.value;
+      wrap.querySelectorAll('.inst-op-card').forEach(card => {
+        card.style.display = (!q || (card.dataset.search || '').includes(q)) ? '' : 'none';
+      });
+      wrap.querySelectorAll('.cron-block').forEach(block => {
+        const cards = [...block.querySelectorAll('.inst-op-card')];
+        if (!cards.length) return; // not an OP-card block (e.g. Empaque table) — leave alone
+        block.style.display = cards.some(c => c.style.display !== 'none') ? '' : 'none';
+      });
+    };
+    input.addEventListener('input', apply);
+    if (this._searchQuery) apply();
+  },
+
   _bindEmpaque(wrap) {
     wrap.querySelectorAll('.inst-btn-enviar').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -158,8 +181,15 @@ const Instalacion = {
     const ops = this._ops.filter(o => o.status === 'en instalacion');
     if (!ops.length) return '<div class="cron-empty">No hay OPs en instalación en este momento.</div>';
 
+    const searchBar = `
+      <div class="asign-search-wrap">
+        <input type="search" id="inst-search" class="asign-search-input"
+          placeholder="Buscar proyecto o número de OP..." value="${esc(this._searchQuery)}">
+      </div>
+    `;
+
     const groups = this._groupByProject(ops);
-    return [...groups.entries()].map(([project, projOps]) => `
+    const blocks = [...groups.entries()].map(([project, projOps]) => `
       <div class="cron-block">
         <div class="cron-block-hdr">
           <span class="cron-hdr-name">${esc(project)}</span>
@@ -172,6 +202,8 @@ const Instalacion = {
         ${projOps.map(op => this._opCardHtml(op)).join('')}
       </div>
     `).join('');
+
+    return searchBar + blocks;
   },
 
   // ── 📅 Cronograma proyectado (secuencial, tipo Gantt) ────────
@@ -291,8 +323,10 @@ const Instalacion = {
     const expanded    = this._expanded.has(op.id);
     const completa    = row?.llego_completa;
 
+    const searchText = `${op.project || ''} ${op.noOp || ''} ${op.name || ''}`.toLowerCase();
+
     return `
-      <div class="inst-op-card">
+      <div class="inst-op-card" data-search="${esc(searchText)}">
         <div class="inst-op-hdr" data-op="${esc(op.id)}">
           <button class="inst-op-toggle" data-toggle="${esc(op.id)}">${expanded ? '▼' : '▶'}</button>
           ${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : ''}
@@ -401,7 +435,12 @@ const Instalacion = {
               <li class="inst-bitacora-item ${e.es_reproceso ? 'inst-bitacora-reproceso' : ''}">
                 <span class="inst-bitacora-tipo">${this._tipoIcon(e.tipo)}</span>
                 <span class="inst-bitacora-texto">${esc(e.texto || '')}</span>
-                ${e.foto_url ? `<a href="${esc(e.foto_url)}" target="_blank" rel="noopener"><img src="${esc(e.foto_url)}" class="inst-foto-thumb"></a>` : ''}
+                ${e.foto_url ? `
+                  <span class="inst-bitacora-foto-wrap">
+                    <a href="${esc(e.foto_url)}" target="_blank" rel="noopener"><img src="${esc(e.foto_url)}" class="inst-foto-thumb"></a>
+                    <button class="inst-bitacora-foto-del" data-id="${esc(e.id)}" data-url="${esc(e.foto_url)}" title="Borrar foto">✕</button>
+                  </span>
+                ` : ''}
                 <span class="inst-bitacora-fecha">${new Date(e.created_at).toLocaleDateString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
               </li>
             `).join('') || '<li class="cron-faint">Sin entradas todavía.</li>'}
@@ -599,6 +638,27 @@ const Instalacion = {
       btn.addEventListener('click', () => {
         delete this._draftFoto[btn.dataset.op];
         this._draw();
+      });
+    });
+
+    // Deletes a photo already attached to a saved bitácora entry (keeps
+    // the entry itself — just clears its foto_url — and best-effort
+    // removes the underlying file from Storage).
+    wrap.querySelectorAll('.inst-bitacora-foto-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Borrar esta foto?')) return;
+        const id = btn.dataset.id, url = btn.dataset.url;
+        btn.disabled = true;
+        try {
+          await DB.updateBitacoraFoto(id, null);
+          await DB.deleteFotoByUrl(url);
+          const entry = this._dbData.bitacoraInstalacion.find(e => e.id === id);
+          if (entry) entry.foto_url = null;
+          this._draw();
+        } catch (e) {
+          alert('Error: ' + e.message);
+          btn.disabled = false;
+        }
       });
     });
 

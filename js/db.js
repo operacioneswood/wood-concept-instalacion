@@ -98,6 +98,22 @@ const DB = {
     return data.publicUrl;
   },
 
+  // Best-effort — removes the underlying file so deleting a photo doesn't
+  // just orphan it in Storage. Never throws: a failed cleanup shouldn't
+  // block clearing the reference on the bitácora entry itself.
+  async deleteFotoByUrl(url) {
+    const marker = `/${this.FOTOS_BUCKET}/`;
+    const idx = (url || '').indexOf(marker);
+    if (idx === -1) return;
+    const path = url.slice(idx + marker.length);
+    try { await this._sb.storage.from(this.FOTOS_BUCKET).remove([path]); }
+    catch (e) { console.warn('[DB] deleteFotoByUrl:', e.message); }
+  },
+
+  async updateBitacoraFoto(id, foto_url) {
+    return this._q(sb => sb.from('bitacora_instalacion').update({ foto_url }).eq('id', id).select().single());
+  },
+
   // ════════════════════════════════════════════════════════
   // INSTALACION_OPS  (per-OP install tracking that ClickUp has no field
   // for: fecha de fin real, y si la OP llegó completa desde fábrica)
