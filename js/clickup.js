@@ -91,9 +91,14 @@ const PlantaAPI = {
   },
 
   // ── Fetch all pages from a single list ───────────────────
+  // Loop bound is a safety ceiling (20,000 tasks), not an expected limit —
+  // the real stop condition is a short/last page. The main project list
+  // already passed 2,000 tasks (20 pages), which used to be the loop cap
+  // and silently dropped everything after it; don't reintroduce a cap
+  // low enough to hit as the list keeps growing.
   async _fetchAllPages(listId, onProgress) {
     const tasks = [];
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < 200; page++) {
       const data = await this._call(`list/${listId}/task`, {
         include_closed: 'true',
         subtasks:       'true',
@@ -266,10 +271,10 @@ const PlantaAPI = {
       nodeMap[t.id] = { name: t.name || '', parent: t.parent || null, status: normStr(t.status?.status || '') };
     }
     // Walks up to the root (project-level) task and returns its id, name
-    // AND status — the project's own status is what actually decides
-    // whether it belongs in this app, not any individual piece's status
-    // (a piece can carry a stale "empaque"/"en instalación" tag long
-    // after its project was closed out as "proyecto terminado").
+    // AND status — used only to exclude pieces whose project was
+    // definitively closed out (PROJECT_CLOSED_STATUSES). We don't gate on
+    // any other project status because it isn't reliably kept in sync
+    // with the individual pieces' real progress.
     const findRoot = id => {
       const seenIds = new Set();
       let cur = nodeMap[id];
@@ -286,7 +291,7 @@ const PlantaAPI = {
       .filter(t => t.parent && statusFilter.has(normStr(t.status?.status || '')))
       .map(t => {
         const root = findRoot(t.id);
-        if (!root || !PROJECT_ACTIVE_STATUSES.has(root.status)) return null;
+        if (!root || PROJECT_CLOSED_STATUSES.has(root.status)) return null;
         const op = this._parseTask(t, fieldIds);
         op.project  = root.name;
         op.parentId = t.parent;

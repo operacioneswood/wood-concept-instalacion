@@ -7,11 +7,15 @@
 // "en instalacion" = en instalación ahora mismo.
 const INSTALL_STATUSES = new Set(['empaque', 'en instalacion']);
 
-// Root-project statuses this whole app is allowed to show. An OP piece can
-// carry a stale "empaque"/"en instalación" status even after its project
-// is fully closed out — gating on the project's own status (not just the
-// piece's) is what keeps finished projects out of the bitácora.
-const PROJECT_ACTIVE_STATUSES = new Set(['fabrica', 'en instalacion']);
+// Root-project statuses that mean the project is definitively closed out.
+// A piece can carry a stale "empaque"/"en instalación" status long after
+// its project was marked "proyecto terminado"/"cancelado" — that's the
+// only case worth gating out. The project's own status is NOT otherwise
+// a reliable signal (it's common for a project to still say "diseño" at
+// the top level while individual pieces are already at "empaque" or "en
+// instalación", because whoever owns that field doesn't update it on
+// every stage change) — so this is a block-list, not an allow-list.
+const PROJECT_CLOSED_STATUSES = new Set(['proyecto terminado', 'cancelado']);
 
 // Fábrica statuses shown read-only in the Cronograma tab (same set
 // wood-concept-planta tracks as "in plant").
