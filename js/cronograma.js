@@ -66,12 +66,12 @@ const Cronograma = {
         const st = this._statusInfo(op.salidaFabrica);
         return `
           <tr>
-            <td>${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : '<span class="cron-faint">—</span>'}</td>
-            <td class="cron-name">${esc(op.name)}</td>
-            <td class="cron-etapa-cell">${this._opStatusBadge(op)}</td>
-            <td class="cron-fecha-lbl cron-envio-lbl">${op.envioFabrica ? this._fmtShort(op.envioFabrica) : '<span class="cron-faint">—</span>'}</td>
-            <td class="cron-fecha-lbl">${op.salidaFabrica ? this._fmtShort(op.salidaFabrica) : '<span class="cron-faint">—</span>'}</td>
-            <td><span class="cron-badge ${st.cls}">${st.label}</span></td>
+            <td data-label="No. OP">${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : '<span class="cron-faint">—</span>'}</td>
+            <td class="cron-name" data-label="Descripción">${esc(op.name)}</td>
+            <td class="cron-etapa-cell" data-label="Etapa">${this._opStatusBadge(op)}</td>
+            <td class="cron-fecha-lbl cron-envio-lbl" data-label="Envío Fáb.">${op.envioFabrica ? this._fmtShort(op.envioFabrica) : '<span class="cron-faint">—</span>'}</td>
+            <td class="cron-fecha-lbl" data-label="Fecha límite">${op.salidaFabrica ? this._fmtShort(op.salidaFabrica) : '<span class="cron-faint">—</span>'}</td>
+            <td data-label="Estado"><span class="cron-badge ${st.cls}">${st.label}</span></td>
           </tr>
         `;
       }).join('');
