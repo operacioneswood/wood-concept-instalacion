@@ -21,6 +21,7 @@ const Instalacion = {
   _ganttOpen:     new Set(),       // project names showing the projected Gantt
   _searchQuery:   '',              // "En Instalación" search box value
   _DEFAULT_DIAS_ESTIMADOS: 2,
+  _DEFAULT_DIAS_RETOQUES: 0,       // 0 = sin etapa de retoques en el cronograma, por defecto
   _DIAS_LIMPIEZA: 4,
 
   render({ installOps, fieldIds, dbData }) {
@@ -196,6 +197,7 @@ const Instalacion = {
           <span class="cron-hdr-meta">
             <span class="cron-hdr-count">${projOps.length} OP${projOps.length !== 1 ? 's' : ''}</span>
             <button class="btn-secondary btn-sm inst-gantt-toggle" data-proj="${esc(project)}">📅 Cronograma</button>
+            <button class="btn-secondary btn-sm inst-print-btn" data-proj="${esc(project)}" title="Imprimir resumen de instalación de ${esc(project)}">🖨 Imprimir</button>
           </span>
         </div>
         ${this._ganttOpen.has(project) ? this._ganttHtml(project, projOps) : ''}
@@ -211,7 +213,11 @@ const Instalacion = {
   // Igual al patrón que ya usaba el coordinador en MS Project: cada OP
   // se instala una detrás de otra (no en paralelo), con una duración
   // estimada en días hábiles; el fin de una es el inicio de la
-  // siguiente. Termina con un buffer de "limpieza y retoques".
+  // siguiente. Cada OP puede además tener su propia etapa de Retoques
+  // justo después de instalarse (con sus propios días, editables por
+  // separado) — esa etapa también ocupa tiempo real en la secuencia,
+  // antes de empezar la siguiente OP. Termina con un buffer general de
+  // "limpieza y retoques" del proyecto completo.
 
   _addBusinessDays(date, days) {
     const d = new Date(date);
@@ -229,20 +235,56 @@ const Instalacion = {
     let cursor = starts.length ? new Date(Math.min(...starts)) : new Date();
     const items = [];
     for (const op of projOps) {
-      const dias = this._installRow(op.id)?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS;
-      const start = new Date(cursor);
+      const row          = this._installRow(op.id);
+      const dias         = row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS;
+      const diasRetoques = row?.dias_retoques  ?? this._DEFAULT_DIAS_RETOQUES;
+
+      const start  = new Date(cursor);
       const finish = this._addBusinessDays(start, dias);
-      items.push({ op, start, finish, dias });
       cursor = finish;
+
+      let retoquesStart = null, retoquesFinish = null;
+      if (diasRetoques > 0) {
+        retoquesStart  = new Date(cursor);
+        retoquesFinish = this._addBusinessDays(retoquesStart, diasRetoques);
+        cursor = retoquesFinish;
+      }
+
+      items.push({ op, start, finish, dias, diasRetoques, retoquesStart, retoquesFinish });
     }
     const limpiezaStart  = new Date(cursor);
     const limpiezaFinish = this._addBusinessDays(limpiezaStart, this._DIAS_LIMPIEZA);
     return { items, limpiezaStart, limpiezaFinish };
   },
 
+  // Flattens each OP's install segment (and, when it has retoques days
+  // set, its separate retoques segment right after) into one ordered list
+  // of bars — this is what actually gets drawn, one row per segment.
+  _ganttBars(items) {
+    const bars = [];
+    for (const it of items) {
+      const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
+      bars.push({
+        start: it.start, finish: it.finish, dias: it.dias,
+        label, title: it.op.name, color: '#3b82f6',
+      });
+      if (it.diasRetoques > 0) {
+        bars.push({
+          start: it.retoquesStart, finish: it.retoquesFinish, dias: it.diasRetoques,
+          label: `↳ Retoques — ${it.op.noOp || it.op.name}`,
+          title: `${it.op.name} (Retoques)`,
+          color: ESTATUS_INSTALACION_COLORS['RETOQUES'], italic: true,
+        });
+      }
+    }
+    return bars;
+  },
+
   _ganttHtml(project, projOps) {
     const { items, limpiezaStart, limpiezaFinish } = this._projectedSchedule(projOps);
     if (!items.length) return '';
+
+    const bars_spec = this._ganttBars(items);
 
     const rangeStart = items[0].start;
     const totalDays  = Math.max(1, daysBetween(rangeStart, limpiezaFinish));
@@ -250,7 +292,7 @@ const Instalacion = {
     const labelW     = 260;
     const chartW     = totalDays * pxPerDay;
     const rowH       = 28;
-    const rows       = items.length + 1; // + limpieza row
+    const rows       = bars_spec.length + 1; // + limpieza row
     const svgH       = rows * rowH + 30;
     const svgW       = labelW + chartW + 20;
 
@@ -276,27 +318,27 @@ const Instalacion = {
       bars += `<line x1="${xFor(today)}" y1="18" x2="${xFor(today)}" y2="${svgH}" stroke="#c41c1c" stroke-width="1.5" stroke-dasharray="3,2"/>`;
     }
 
-    items.forEach((it, i) => {
+    bars_spec.forEach((b, i) => {
       const y  = 26 + i * rowH;
-      const x1 = xFor(it.start), x2 = xFor(it.finish);
+      const x1 = xFor(b.start), x2 = xFor(b.finish);
       const w  = Math.max(4, x2 - x1);
-      const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
+      const lbl = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
       bars += `
-        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f">${esc(label.length > 42 ? label.slice(0,41)+'…' : label)}</text>
-        <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="#3b82f6" opacity="0.85">
-          <title>${esc(it.op.name)}: ${this._fmtShort(it.start)} → ${this._fmtShort(it.finish)} (${it.dias}d)</title>
+        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f"${b.italic ? ' font-style="italic"' : ''}>${esc(lbl)}</text>
+        <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="${b.color}" opacity="0.85">
+          <title>${esc(b.title)}: ${this._fmtShort(b.start)} → ${this._fmtShort(b.finish)} (${b.dias}d)</title>
         </rect>
-        <text x="${x2 + 6}" y="${y + rowH/2 + 4}" font-size="9.5" fill="#9b9490">${it.dias}d</text>
+        <text x="${x2 + 6}" y="${y + rowH/2 + 4}" font-size="9.5" fill="#9b9490">${b.dias}d</text>
       `;
     });
     // Limpieza row
     {
-      const i = items.length;
+      const i = bars_spec.length;
       const y = 26 + i * rowH;
       const x1 = xFor(limpiezaStart), x2 = xFor(limpiezaFinish);
       const w  = Math.max(4, x2 - x1);
       bars += `
-        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f" font-style="italic">Limpieza y retoques</text>
+        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f" font-style="italic">Limpieza general</text>
         <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="#9b9490" opacity="0.7"/>
       `;
     }
@@ -308,11 +350,146 @@ const Instalacion = {
         <div class="inst-gantt-hdr">
           <span>Inicio proyectado: <strong>${this._fmtShort(rangeStart)}</strong></span>
           <span>Fin proyectado (con limpieza): <strong>${this._fmtShort(limpiezaFinish)}</strong></span>
-          <span class="cron-faint">Días estimados por OP editables abajo, en cada tarjeta.</span>
+          <span class="cron-faint">Días de instalación y retoques editables abajo, en cada tarjeta.</span>
         </div>
         <div style="overflow-x:auto;padding-bottom:6px">${svg}</div>
       </div>
     `;
+  },
+
+  // ── 🖨 Informe semanal por proyecto ───────────────────────────
+  // Resumen imprimible para mandar al cliente/jefatura: estado de cada OP,
+  // el cronograma proyectado (misma barra que se ve en pantalla) y qué se
+  // trabajó realmente en los últimos 7 días según la bitácora.
+  _printProyecto(projName, projOps) {
+    const today   = new Date();
+    const months  = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const todayFmt = `${today.getDate()} de ${months[today.getMonth()]} de ${today.getFullYear()}`;
+
+    const { items } = this._projectedSchedule(projOps);
+    const byOpId = Object.fromEntries(items.map(it => [it.op.id, it]));
+
+    const sorted = [...projOps].sort((a, b) => {
+      const ia = byOpId[a.id], ib = byOpId[b.id];
+      if (!ia && !ib) return 0;
+      if (!ia) return 1;
+      if (!ib) return -1;
+      return ia.start - ib.start;
+    });
+
+    const opRows = sorted.map((op, idx) => {
+      const it          = byOpId[op.id];
+      const row         = this._installRow(op.id);
+      const installers  = this._instaladoresFor(op.id).join(', ') || '—';
+      const estatus     = op.estatusInstalacion || 'SIN COMENZAR';
+      const fechaFinReal = row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—';
+      const fechaFinEst  = it ? this._fmtShort(it.retoquesFinish || it.finish) : '—';
+      const diasTxt      = it ? `${it.dias}d${it.diasRetoques > 0 ? ` + ${it.diasRetoques}d retoques` : ''}` : '—';
+      return `<tr>
+        <td class="td-num">${idx + 1}</td>
+        <td class="td-op">${esc(op.noOp || '—')}</td>
+        <td class="td-desc">${esc(op.name)}</td>
+        <td class="td-est">${esc(estatus)}</td>
+        <td class="td-inst">${esc(installers)}</td>
+        <td class="td-dias">${esc(diasTxt)}</td>
+        <td class="td-date">${fechaFinEst}</td>
+        <td class="td-date">${fechaFinReal}</td>
+      </tr>`;
+    }).join('');
+
+    // Actividad real de la última semana, tomada de la bitácora — esto es
+    // lo que responde "qué OPs se trabajaron" en el informe.
+    const opIds  = new Set(projOps.map(o => o.id));
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    const recent = (this._dbData?.bitacoraInstalacion || [])
+      .filter(e => opIds.has(e.op_id) && new Date(e.created_at) >= cutoff)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const opLabelById = Object.fromEntries(projOps.map(o => [o.id, `${o.noOp ? o.noOp + ' — ' : ''}${o.name}`]));
+
+    const activityRows = recent.map(e => `<tr>
+      <td class="td-date">${new Date(e.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}</td>
+      <td class="td-op">${esc(opLabelById[e.op_id] || '')}</td>
+      <td class="td-tipo">${this._tipoIcon(e.tipo)}</td>
+      <td class="td-texto">${esc(e.texto || '')}</td>
+    </tr>`).join('');
+
+    const ganttHtml = this._ganttHtml(projName, projOps);
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Informe de Instalación — ${esc(projName)}</title>
+<style>
+  @page { size: letter portrait; margin: 0.65in 0.75in; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 10.5pt; color: #111; background: #fff; }
+  .proj-hdr {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2.5pt solid #8B1A1A; padding-bottom: 8pt; margin-bottom: 12pt;
+  }
+  .proj-title { font-size: 15pt; font-weight: 700; color: #8B1A1A; letter-spacing: -0.02em; }
+  .proj-date  { font-size: 9.5pt; color: #666; }
+  h2.section {
+    font-size: 11pt; font-weight: 700; color: #8B1A1A; letter-spacing: -0.01em;
+    margin: 18pt 0 6pt; border-bottom: 1pt solid #e8e0db; padding-bottom: 3pt;
+  }
+  table { width: 100%; border-collapse: collapse; orphans: 3; widows: 3; }
+  thead tr { background: #f4eeea; }
+  th {
+    font-size: 8.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #555; padding: 5pt 6pt; text-align: left; border-bottom: 1pt solid #c8b8b0; white-space: nowrap;
+  }
+  td { padding: 5pt 6pt; border-bottom: 0.5pt solid #e8e0db; font-size: 9.5pt; vertical-align: top; line-height: 1.3; }
+  tr:last-child td { border-bottom: none; }
+  .td-num  { width: 16pt; text-align: center; color: #888; font-size: 9pt; }
+  .td-op   { width: 58pt; font-weight: 700; color: #8B1A1A; white-space: nowrap; }
+  .td-desc { color: #111; }
+  .td-est  { width: 80pt; }
+  .td-inst { width: 110pt; }
+  .td-dias { width: 90pt; white-space: nowrap; }
+  .td-date { width: 60pt; white-space: nowrap; }
+  .td-tipo { width: 18pt; text-align: center; }
+  .cron-faint { color: #aaa; font-style: italic; }
+  .inst-gantt-hdr { display: flex; gap: 16px; font-size: 9pt; color: #666; margin-bottom: 6pt; flex-wrap: wrap; }
+  .inst-gantt-hdr strong { color: #111; }
+  .tbl-footer { margin-top: 10pt; font-size: 8pt; color: #aaa; text-align: right; }
+</style>
+</head>
+<body>
+<div class="proj-hdr">
+  <div class="proj-title">Informe de Instalación — ${esc(projName)}</div>
+  <div class="proj-date">${todayFmt}</div>
+</div>
+
+<h2 class="section">Estado de las OPs</h2>
+<table>
+  <thead><tr>
+    <th>#</th><th>No. OP</th><th>Descripción</th><th>Estatus</th><th>Instalador(es)</th>
+    <th>Días (instal. + retoques)</th><th>Fin estimado</th><th>Fin real</th>
+  </tr></thead>
+  <tbody>${opRows}</tbody>
+</table>
+
+<h2 class="section">Cronograma proyectado</h2>
+${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cronograma.</p>'}
+
+<h2 class="section">Actividad de los últimos 7 días</h2>
+<table>
+  <thead><tr><th>Fecha</th><th>OP</th><th></th><th>Nota</th></tr></thead>
+  <tbody>${activityRows || '<tr><td colspan="4" class="cron-faint">Sin actividad registrada esta semana.</td></tr>'}</tbody>
+</table>
+
+<div class="tbl-footer">${projOps.length} OP${projOps.length !== 1 ? 's' : ''} en instalación · Wood Concept Instalación</div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=900,height=700');
+    if (!win) { alert('Permite ventanas emergentes para imprimir.'); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
   },
 
   _opCardHtml(op) {
@@ -395,9 +572,12 @@ const Instalacion = {
               </span>
               <span>Fin instalación: <strong>${row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—'}</strong></span>
             </div>
-            <label class="field-label">Días estimados (cronograma)</label>
+            <label class="field-label">Días estimados — Instalación</label>
             <input type="number" min="1" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
               value="${row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS}" style="max-width:80px">
+            <label class="field-label" style="margin-top:8px">Días estimados — Retoques (0 = sin etapa de retoques)</label>
+            <input type="number" min="0" class="field-input inst-dias-retoques-inp" data-op="${esc(op.id)}"
+              value="${row?.dias_retoques ?? this._DEFAULT_DIAS_RETOQUES}" style="max-width:80px">
             ${estatus !== 'COMPLETADO' ? `<button class="btn-primary btn-sm inst-btn-completar" data-op="${esc(op.id)}" style="margin-top:8px">✔ Marcar instalación completa</button>` : ''}
           </div>
         </div>
@@ -498,6 +678,14 @@ const Instalacion = {
       });
     });
 
+    wrap.querySelectorAll('.inst-print-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const proj = btn.dataset.proj;
+        const projOps = this._ops.filter(o => (o.project || '(Sin proyecto)') === proj && o.status === 'en instalacion');
+        this._printProyecto(proj, projOps);
+      });
+    });
+
     wrap.querySelectorAll('.inst-dias-estimados-inp').forEach(inp => {
       inp.addEventListener('change', async () => {
         const opId = inp.dataset.op;
@@ -507,6 +695,18 @@ const Instalacion = {
           this._upsertLocalInstalacionOp(saved);
           this._draw();
         } catch (e) { console.warn('[Instalacion] dias_estimados save:', e.message); }
+      });
+    });
+
+    wrap.querySelectorAll('.inst-dias-retoques-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const opId = inp.dataset.op;
+        const dias = Math.max(0, parseInt(inp.value, 10) || 0);
+        try {
+          const saved = await DB.upsertInstalacionOp({ op_id: opId, dias_retoques: dias });
+          this._upsertLocalInstalacionOp(saved);
+          this._draw();
+        } catch (e) { console.warn('[Instalacion] dias_retoques save:', e.message); }
       });
     });
 
