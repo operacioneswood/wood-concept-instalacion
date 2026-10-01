@@ -122,12 +122,13 @@ const DB = {
     return this._q(sb => sb.from('instalacion_ops').select('*'));
   },
 
-  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados }) {
+  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados, dias_retoques }) {
     const row = { op_id, updated_at: new Date().toISOString() };
     if (fecha_fin       !== undefined) row.fecha_fin      = fecha_fin;
     if (llego_completa  !== undefined) row.llego_completa = llego_completa;
     if (faltante        !== undefined) row.faltante       = faltante;
     if (dias_estimados  !== undefined) row.dias_estimados = dias_estimados;
+    if (dias_retoques   !== undefined) row.dias_retoques  = dias_retoques;
     return this._q(sb => sb.from('instalacion_ops').upsert(row, { onConflict: 'op_id' }).select().single());
   },
 
@@ -152,8 +153,11 @@ const DB = {
       llego_completa   boolean,
       faltante         text,
       dias_estimados   integer,
+      dias_retoques    integer,
       updated_at       timestamptz not null default now()
     );
+
+    alter table instalacion_ops add column if not exists dias_retoques integer;
 
     create table if not exists instaladores (
       nombre           text primary key,
