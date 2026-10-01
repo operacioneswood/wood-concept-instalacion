@@ -10,8 +10,13 @@
 const Cronograma = {
   _ops: [],
 
-  render({ ops }) {
-    this._ops = ops || [];
+  render({ ops, installOps }) {
+    // Empaque ya salió de fábrica, pero sigue siendo parte de lo que el
+    // coordinador de instalaciones necesita ver venir — se suma aquí igual
+    // que en el Cronograma de Fábrica de wood-concept-planta. Los que ya
+    // están "en instalacion" no: esos viven en la pestaña Instalación.
+    const empaque = (installOps || []).filter(op => op.status === 'empaque');
+    this._ops = [...(ops || []), ...empaque];
     this._draw();
   },
 
@@ -114,7 +119,7 @@ const Cronograma = {
 
   _opStatusBadge(op) {
     const key = normStr(op.status || '');
-    const sd  = STATUS_DISPLAY[key];
+    const sd  = STATUS_DISPLAY[key] || INSTALL_STATUS_DISPLAY[key];
     if (sd) return `<span class="status-badge ${sd.cls}">${esc(sd.label)}</span>`;
     return op.status ? `<span class="cron-etapa-lbl">${esc(op.statusRaw || op.status)}</span>` : '<span class="cron-faint">—</span>';
   },
