@@ -122,10 +122,10 @@ const Instalacion = {
           <tbody>
             ${projOps.map(op => `
               <tr>
-                <td>${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : '<span class="cron-faint">—</span>'}</td>
-                <td class="cron-name">${esc(op.name)}</td>
-                <td class="cron-fecha-lbl">${op.fechaEmpaque ? this._fmtShort(op.fechaEmpaque) : '<span class="cron-faint">—</span>'}</td>
-                <td class="cron-fecha-lbl">${op.envioInstalacion ? this._fmtShort(op.envioInstalacion) : '<span class="cron-faint">—</span>'}</td>
+                <td data-label="No. OP">${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : '<span class="cron-faint">—</span>'}</td>
+                <td class="cron-name" data-label="Descripción">${esc(op.name)}</td>
+                <td class="cron-fecha-lbl" data-label="Fecha empaque">${op.fechaEmpaque ? this._fmtShort(op.fechaEmpaque) : '<span class="cron-faint">—</span>'}</td>
+                <td class="cron-fecha-lbl" data-label="Envío a sitio">${op.envioInstalacion ? this._fmtShort(op.envioInstalacion) : '<span class="cron-faint">—</span>'}</td>
                 <td>${op.envioInstalacion ? '' : `<button class="btn-secondary btn-sm inst-btn-enviar" data-op="${esc(op.id)}">📤 Marcar enviada hoy</button>`}</td>
               </tr>
             `).join('')}
@@ -944,12 +944,12 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
         <tbody>
           ${rows.map(r => `
             <tr>
-              <td>${esc(r.name)}</td>
-              <td style="text-align:center">${r.total}</td>
-              <td style="text-align:center">${r.completed}</td>
-              <td style="text-align:center">${r.avgDays !== null ? r.avgDays.toFixed(1) : '—'}</td>
-              <td style="text-align:center">${r.reprocesos || 0}</td>
-              <td style="text-align:center">${r.incompletas || 0}</td>
+              <td data-label="Instalador">${esc(r.name)}</td>
+              <td style="text-align:center" data-label="OPs asignadas">${r.total}</td>
+              <td style="text-align:center" data-label="Completadas">${r.completed}</td>
+              <td style="text-align:center" data-label="Prom. días/OP">${r.avgDays !== null ? r.avgDays.toFixed(1) : '—'}</td>
+              <td style="text-align:center" data-label="Reprocesos">${r.reprocesos || 0}</td>
+              <td style="text-align:center" data-label="Llegaron incompletas">${r.incompletas || 0}</td>
             </tr>
           `).join('')}
         </tbody>
