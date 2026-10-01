@@ -1892,3 +1892,73 @@ body.has-pending-shift .app-body { padding-top: 0; }
   .inst-foto-row { grid-column: 1; }
   .inst-compose-actions { grid-column: 1; }
 }
+
+/* ════════════════════════════════════════════════════════════
+   PHONE MODE  (real phones — tighter than ".tablet" above, which
+   targets ~768-1024px tablets and actually enlarges touch targets,
+   which makes the nav bar and table columns overflow even more on
+   a ~360-430px phone screen. These rules win over ".tablet" ones
+   by repeating the ".tablet" prefix where a conflicting rule exists.)
+   ════════════════════════════════════════════════════════════ */
+@media (max-width: 560px) {
+
+  /* Nav: wrap into two rows instead of spilling off-screen */
+  .app-nav,
+  .tablet .app-nav {
+    position: sticky;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--nav-h);
+    padding: 8px 10px;
+    row-gap: 8px;
+  }
+  .app-body,
+  .tablet .app-body { padding-top: 0; }
+  #global-shift-banner.visible,
+  .tablet #global-shift-banner.visible { margin-top: 0; }
+
+  .nav-brand { margin-right: auto; }
+  .nav-right { margin-left: 0; padding-left: 0; border-left: none; }
+
+  .nav-links { order: 3; flex: 1 1 100%; width: 100%; gap: 6px; }
+  .nav-links .nav-btn,
+  .tablet .nav-links .nav-btn { flex: 1; text-align: center; padding: 9px 6px; font-size: 12.5px; }
+
+  /* Project/group headers: let the OP count + action buttons wrap
+     below the name instead of squeezing onto one line */
+  .cron-block-hdr { flex-wrap: wrap; row-gap: 8px; }
+  .cron-hdr-name  { flex-basis: 100%; white-space: normal; }
+  .cron-hdr-meta  { flex-wrap: wrap; flex-shrink: 1; }
+
+  .tab-wrap,
+  .tablet .tab-wrap { padding: 14px 10px 90px; }
+  .cron-body,
+  .tablet .cron-body { padding: 10px; }
+  .inst-op-detail,
+  .tablet .inst-op-detail { padding: 12px; }
+
+  /* Data tables → stacked label:value cards. Swiping a wide table
+     sideways on a phone isn't "cómodo" — a top-to-bottom list reads
+     the same data without the horizontal scroll. */
+  .cron-block { overflow: visible; }
+  .cron-tbl, .cron-tbl thead, .cron-tbl tbody, .cron-tbl tr, .cron-tbl th, .cron-tbl td,
+  .ranking-table, .ranking-table thead, .ranking-table tbody, .ranking-table tr, .ranking-table th, .ranking-table td {
+    display: block;
+  }
+  .cron-tbl thead, .ranking-table thead { display: none; }
+  .cron-tbl tr, .ranking-table tr { padding: 10px 14px; border-bottom: 1px solid var(--divider); }
+  .cron-tbl tr:last-child, .ranking-table tr:last-child { border-bottom: none; }
+  .cron-tbl td, .ranking-table td {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 3px 0; border: none; white-space: normal;
+  }
+  .cron-tbl td:not([data-label]), .ranking-table td:not([data-label]) { justify-content: flex-start; }
+  .cron-tbl td::before, .ranking-table td::before {
+    content: attr(data-label);
+    font-size: 0.66rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--faint); flex-shrink: 0;
+  }
+  .cron-tbl td:empty, .ranking-table td:empty { display: none; }
+  .cron-tbl td:has(button) { justify-content: center; padding-top: 6px; }
+  .cron-name { max-width: none; }
+}
