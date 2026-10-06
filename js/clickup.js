@@ -230,6 +230,19 @@ const PlantaAPI = {
     catch { return {}; }
   },
 
+  // Clears a custom field's value (ClickUp has no "set to null" — it's a DELETE).
+  async removeField(taskId, fieldId) {
+    const apiKey = this.getApiKey();
+    const res = await fetch(`https://api.clickup.com/api/v2/task/${taskId}/field/${fieldId}`, {
+      method:  'DELETE',
+      headers: { Authorization: apiKey },
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => String(res.status));
+      throw new Error(`ClickUp field ${res.status}: ${msg}`);
+    }
+  },
+
   // ── Main entry point ─────────────────────────────────────
   async fetchOPs({ force = false, onProgress } = {}) {
     const prog = msg => { if (onProgress) onProgress(msg); };

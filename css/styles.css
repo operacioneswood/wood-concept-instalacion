@@ -1962,3 +1962,22 @@ body.has-pending-shift .app-body { padding-top: 0; }
   .cron-tbl td:has(button) { justify-content: center; padding-top: 6px; }
   .cron-name { max-width: none; }
 }
+
+/* Avance (%) por OP */
+.inst-pct { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text); }
+.inst-pct-bar { width: 60px; height: 6px; border-radius: 3px; background: var(--divider); overflow: hidden; }
+.inst-pct-bar span { display: block; height: 100%; background: #22a06b; }
+
+/* Fechas editables */
+.inst-dates .inst-date-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.inst-date-lbl { min-width: 118px; }
+.inst-dates .inst-fecha-inp { width: auto; padding: 3px 6px; font-size: 12.5px; }
+
+/* Bitácora: editar / borrar */
+.inst-bitacora-act { background: none; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; opacity: 0.55; flex-shrink: 0; }
+.inst-bitacora-act:hover { opacity: 1; }
+.inst-bitacora-editing { flex-wrap: wrap; align-items: flex-start; }
+.inst-bitacora-editing .inst-edit-tipo { width: 160px; }
+.inst-bitacora-editing .inst-edit-texto { flex: 1; min-width: 200px; min-height: 40px; resize: vertical; font-family: inherit; }
+.inst-bitacora-edit-actions { display: flex; gap: 6px; }
+.tablet .inst-bitacora-act { font-size: 18px; padding: 6px; }

@@ -81,6 +81,12 @@ const DB = {
       .select().single());
   },
 
+  async updateBitacoraEntry(id, { tipo, texto }) {
+    return this._q(sb => sb.from('bitacora_instalacion')
+      .update({ tipo, texto, es_reproceso: tipo === 'reproceso' })
+      .eq('id', id).select().single());
+  },
+
   async deleteBitacoraEntry(id) {
     const { error } = await this._sb.from('bitacora_instalacion').delete().eq('id', id);
     if (error) throw error;
@@ -122,8 +128,9 @@ const DB = {
     return this._q(sb => sb.from('instalacion_ops').select('*'));
   },
 
-  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados, dias_retoques }) {
+  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados, dias_retoques, porcentaje }) {
     const row = { op_id, updated_at: new Date().toISOString() };
+    if (porcentaje      !== undefined) row.porcentaje     = porcentaje;
     if (fecha_fin       !== undefined) row.fecha_fin      = fecha_fin;
     if (llego_completa  !== undefined) row.llego_completa = llego_completa;
     if (faltante        !== undefined) row.faltante       = faltante;
@@ -158,6 +165,7 @@ const DB = {
     );
 
     alter table instalacion_ops add column if not exists dias_retoques integer;
+    alter table instalacion_ops add column if not exists porcentaje integer;
 
     create table if not exists instaladores (
       nombre           text primary key,

@@ -18,6 +18,8 @@ const Instalacion = {
   _draftTexto:    {},              // op_id → draft comment text
   _draftFoto:     {},              // op_id → uploaded photo URL, staged for the next Guardar
   _fotoUploading: {},              // op_id → true while a photo upload is in flight
+  _editingEntry:  null,            // bitácora entry id being edited inline
+  _editDraft:     { tipo: 'nota', texto: '' },
   _ganttOpen:     new Set(),       // project names showing the projected Gantt
   _searchQuery:   '',              // "En Instalación" search box value
   _DEFAULT_DIAS_ESTIMADOS: 2,
@@ -43,6 +45,12 @@ const Instalacion = {
     if (!d) return '';
     const months = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
     return `${d.getDate()} ${months[d.getMonth()]}`;
+  },
+
+  // Date → 'YYYY-MM-DD' in local time (what <input type="date"> uses).
+  _isoDate(d) {
+    if (!d) return '';
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   },
 
   _instaladoresFor(opId) {
@@ -390,6 +398,7 @@ const Instalacion = {
         <td class="td-op">${esc(op.noOp || '—')}</td>
         <td class="td-desc">${esc(op.name)}</td>
         <td class="td-est">${esc(estatus)}</td>
+        <td class="td-pct">${row?.porcentaje != null ? row.porcentaje + '%' : '—'}</td>
         <td class="td-inst">${esc(installers)}</td>
         <td class="td-dias">${esc(diasTxt)}</td>
         <td class="td-date">${fechaFinEst}</td>
@@ -446,6 +455,7 @@ const Instalacion = {
   .td-op   { width: 58pt; font-weight: 700; color: #8B1A1A; white-space: nowrap; }
   .td-desc { color: #111; }
   .td-est  { width: 80pt; }
+  .td-pct  { width: 40pt; text-align: center; white-space: nowrap; }
   .td-inst { width: 110pt; }
   .td-dias { width: 90pt; white-space: nowrap; }
   .td-date { width: 60pt; white-space: nowrap; }
@@ -465,7 +475,7 @@ const Instalacion = {
 <h2 class="section">Estado de las OPs</h2>
 <table>
   <thead><tr>
-    <th>#</th><th>No. OP</th><th>Descripción</th><th>Estatus</th><th>Instalador(es)</th>
+    <th>#</th><th>No. OP</th><th>Descripción</th><th>Estatus</th><th>Avance</th><th>Instalador(es)</th>
     <th>Días (instal. + retoques)</th><th>Fin estimado</th><th>Fin real</th>
   </tr></thead>
   <tbody>${opRows}</tbody>
@@ -509,6 +519,10 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
           ${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : ''}
           <span class="cron-name">${esc(op.name)}</span>
           <span class="inst-est-badge" style="background:${estColor}22;color:${estColor};border-color:${estColor}66">${esc(estatus)}</span>
+          ${row?.porcentaje != null ? `
+            <span class="inst-pct" title="Avance de la OP">
+              <span class="inst-pct-bar"><span style="width:${row.porcentaje}%"></span></span>${row.porcentaje}%
+            </span>` : ''}
           ${installers.length ? `<span class="inst-installer-tag">👷 ${esc(installers.join(', '))}</span>` : '<span class="cron-faint">Sin instalador</span>'}
           ${completa === false ? '<span class="badge-reproceso-sm">Incompleta</span>' : ''}
         </div>
@@ -550,6 +564,13 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
             <label class="field-label">Estatus instalación</label>
             <select class="field-input inst-estatus-sel" data-op="${esc(op.id)}">${estatusOpts}</select>
 
+            <label class="field-label" style="margin-top:10px">Avance (%)</label>
+            <select class="field-input inst-pct-sel" data-op="${esc(op.id)}" style="max-width:110px">
+              <option value="" ${row?.porcentaje == null ? 'selected' : ''}>—</option>
+              ${Array.from({ length: 21 }, (_, i) => i * 5).map(p =>
+                `<option value="${p}" ${row?.porcentaje === p ? 'selected' : ''}>${p}%</option>`).join('')}
+            </select>
+
             <label class="field-label" style="margin-top:10px">¿Llegó completa de fábrica?</label>
             <div class="inst-completa-row">
               <button class="btn-sm ${row?.llego_completa === true  ? 'btn-primary' : 'btn-secondary'}" data-op="${esc(op.id)}" data-completa="true">Sí</button>
@@ -564,13 +585,17 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
           <div class="inst-detail-col">
             <label class="field-label">Fechas</label>
             <div class="inst-dates">
-              <span>Envío a sitio: <strong>${op.envioInstalacion ? this._fmtShort(op.envioInstalacion) : '—'}</strong>
-                ${!op.envioInstalacion ? `<button class="btn-secondary btn-sm inst-btn-marcar-envio" data-op="${esc(op.id)}">Marcar hoy</button>` : ''}
-              </span>
-              <span>Inicio instalación: <strong>${op.inicioInstalacion ? this._fmtShort(op.inicioInstalacion) : '—'}</strong>
-                ${!op.inicioInstalacion ? `<button class="btn-secondary btn-sm inst-btn-marcar-inicio" data-op="${esc(op.id)}">Marcar hoy</button>` : ''}
-              </span>
-              <span>Fin instalación: <strong>${row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—'}</strong></span>
+              ${[
+                ['envio',  'Envío a sitio',      this._isoDate(op.envioInstalacion)],
+                ['inicio', 'Inicio instalación', this._isoDate(op.inicioInstalacion)],
+                ['fin',    'Fin instalación',    row?.fecha_fin || ''],
+              ].map(([kind, lbl, val]) => `
+                <span class="inst-date-row">
+                  <span class="inst-date-lbl">${lbl}:</span>
+                  <input type="date" class="field-input inst-fecha-inp" data-op="${esc(op.id)}" data-kind="${kind}" value="${val}">
+                  <button class="btn-secondary btn-sm inst-btn-fecha-hoy" data-op="${esc(op.id)}" data-kind="${kind}">Hoy</button>
+                </span>
+              `).join('')}
             </div>
             <label class="field-label">Días estimados — Instalación</label>
             <input type="number" min="1" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
@@ -585,20 +610,19 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
         <div class="inst-bitacora">
           <div class="inst-bitacora-hdr">Bitácora</div>
           <div class="inst-bitacora-compose">
-            <select class="field-input inst-tipo-sel" data-op="${esc(op.id)}">
-              <option value="nota"        ${tipo==='nota'?'selected':''}>📝 Nota</option>
-              <option value="inicio"      ${tipo==='inicio'?'selected':''}>▶ Inicio</option>
-              <option value="pausa"       ${tipo==='pausa'?'selected':''}>⏸ Pausa</option>
-              <option value="reanudado"   ${tipo==='reanudado'?'selected':''}>▶ Reanudado</option>
-              <option value="cambio_sitio" ${tipo==='cambio_sitio'?'selected':''}>🔁 Cambio en sitio</option>
-              <option value="reproceso"   ${tipo==='reproceso'?'selected':''}>⚠ Reproceso</option>
-            </select>
+            <select class="field-input inst-tipo-sel" data-op="${esc(op.id)}">${this._tipoOptions(tipo)}</select>
             <textarea class="field-input inst-texto-inp" data-op="${esc(op.id)}" placeholder="Comentario...">${esc(texto)}</textarea>
             <div class="inst-foto-row">
-              <label class="btn-secondary btn-sm inst-foto-label" for="foto-${esc(op.id)}">
-                ${this._fotoUploading[op.id] ? '⏳ Subiendo...' : this._draftFoto[op.id] ? '✅ Foto lista' : '📷 Tomar/adjuntar foto'}
-              </label>
-              <input type="file" accept="image/*" capture="environment" id="foto-${esc(op.id)}"
+              ${this._fotoUploading[op.id] ? '<span class="btn-secondary btn-sm inst-foto-label">⏳ Subiendo...</span>'
+                : this._draftFoto[op.id] ? '<span class="btn-secondary btn-sm inst-foto-label">✅ Foto lista</span>'
+                : `
+                <label class="btn-secondary btn-sm inst-foto-label" for="foto-cam-${esc(op.id)}">📷 Tomar foto</label>
+                <label class="btn-secondary btn-sm inst-foto-label" for="foto-gal-${esc(op.id)}">🖼 Adjuntar foto</label>
+              `}
+              <!-- capture="environment" forces the camera on phones; the second input has no capture so it opens the gallery/files -->
+              <input type="file" accept="image/*" capture="environment" id="foto-cam-${esc(op.id)}"
+                class="inst-foto-inp" data-op="${esc(op.id)}" style="display:none">
+              <input type="file" accept="image/*" id="foto-gal-${esc(op.id)}"
                 class="inst-foto-inp" data-op="${esc(op.id)}" style="display:none">
               ${this._draftFoto[op.id] ? `
                 <img src="${esc(this._draftFoto[op.id])}" class="inst-foto-thumb">
@@ -611,7 +635,16 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
             </div>
           </div>
           <ul class="inst-bitacora-list">
-            ${bitacora.map(e => `
+            ${bitacora.map(e => this._editingEntry === e.id ? `
+              <li class="inst-bitacora-item inst-bitacora-editing">
+                <select class="field-input inst-edit-tipo">${this._tipoOptions(this._editDraft.tipo, true)}</select>
+                <textarea class="field-input inst-edit-texto">${esc(this._editDraft.texto)}</textarea>
+                <span class="inst-bitacora-edit-actions">
+                  <button class="btn-primary btn-sm inst-edit-save" data-id="${esc(e.id)}">Guardar</button>
+                  <button class="btn-secondary btn-sm inst-edit-cancel">Cancelar</button>
+                </span>
+              </li>
+            ` : `
               <li class="inst-bitacora-item ${e.es_reproceso ? 'inst-bitacora-reproceso' : ''}">
                 <span class="inst-bitacora-tipo">${this._tipoIcon(e.tipo)}</span>
                 <span class="inst-bitacora-texto">${esc(e.texto || '')}</span>
@@ -622,6 +655,8 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
                   </span>
                 ` : ''}
                 <span class="inst-bitacora-fecha">${new Date(e.created_at).toLocaleDateString('es-MX', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
+                <button class="inst-bitacora-act inst-entry-edit" data-id="${esc(e.id)}" title="Editar">✏️</button>
+                <button class="inst-bitacora-act inst-entry-del" data-id="${esc(e.id)}" title="Borrar entrada">🗑</button>
               </li>
             `).join('') || '<li class="cron-faint">Sin entradas todavía.</li>'}
           </ul>
@@ -634,32 +669,125 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
     return { nota: '📝', inicio: '▶', pausa: '⏸', reanudado: '▶', cambio_sitio: '🔁', reproceso: '⚠', fin: '✔' }[tipo] || '📝';
   },
 
-  // Shared by "Marcar hoy" buttons for envío/inicio de instalación —
-  // writes today's date to the given ClickUp date field.
-  async _marcarFechaHoy(btn, fieldKey, opField) {
-    const opId = btn.dataset.op;
+  _tipoOptions(selected, includeFin = false) {
+    const tipos = [
+      ['nota', '📝 Nota'], ['inicio', '▶ Inicio'], ['pausa', '⏸ Pausa'], ['reanudado', '▶ Reanudado'],
+      ['cambio_sitio', '🔁 Cambio en sitio'], ['reproceso', '⚠ Reproceso'],
+    ];
+    if (includeFin) tipos.push(['fin', '✔ Fin']);
+    return tipos.map(([v, l]) => `<option value="${v}" ${selected === v ? 'selected' : ''}>${l}</option>`).join('');
+  },
+
+  // Sets (or clears, when iso is '') one of the OP's install dates.
+  // Envío / inicio live in ClickUp date fields; fin lives in Supabase
+  // (instalacion_ops.fecha_fin) because ClickUp has no field for it.
+  async _setFecha(opId, kind, iso) {
     const op = this._ops.find(o => o.id === opId);
-    const fieldId = this._fieldIds[fieldKey];
-    if (!op || !fieldId) return;
-    const orig = btn.textContent;
-    btn.disabled = true; btn.textContent = '...';
-    try {
-      await PlantaAPI.setField(opId, fieldId, Date.now());
-      op[opField] = new Date();
+    if (!op) return;
+    if (kind === 'fin') {
+      const saved = await DB.upsertInstalacionOp({ op_id: opId, fecha_fin: iso || null });
+      this._upsertLocalInstalacionOp(saved);
+    } else {
+      const key = kind === 'envio' ? 'envioInstalacion' : 'inicioInstalacion';
+      const fieldId = this._fieldIds[key];
+      if (!fieldId) throw new Error('No se encontró el campo de fecha en ClickUp');
+      if (iso) {
+        const [y, m, d] = iso.split('-').map(Number);
+        const date = new Date(y, m - 1, d, 12);   // local noon — avoids shifting a day across time zones
+        await PlantaAPI.setField(opId, fieldId, date.getTime());
+        op[key] = date;
+      } else {
+        await PlantaAPI.removeField(opId, fieldId);
+        op[key] = null;
+      }
       PlantaAPI.clearCache();
-      this._draw();
-    } catch (e) {
-      alert('Error: ' + e.message);
-      btn.disabled = false; btn.textContent = orig;
     }
+    this._draw();
   },
 
   _bindInstalacion(wrap) {
-    wrap.querySelectorAll('.inst-btn-marcar-envio').forEach(btn => {
-      btn.addEventListener('click', () => this._marcarFechaHoy(btn, 'envioInstalacion', 'envioInstalacion'));
+    wrap.querySelectorAll('.inst-fecha-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        inp.disabled = true;
+        try { await this._setFecha(inp.dataset.op, inp.dataset.kind, inp.value); }
+        catch (e) { alert('Error: ' + e.message); inp.disabled = false; }
+      });
     });
-    wrap.querySelectorAll('.inst-btn-marcar-inicio').forEach(btn => {
-      btn.addEventListener('click', () => this._marcarFechaHoy(btn, 'inicioInstalacion', 'inicioInstalacion'));
+    wrap.querySelectorAll('.inst-btn-fecha-hoy').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; btn.textContent = '...';
+        try { await this._setFecha(btn.dataset.op, btn.dataset.kind, todayIso()); }
+        catch (e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = 'Hoy'; }
+      });
+    });
+
+    wrap.querySelectorAll('.inst-pct-sel').forEach(sel => {
+      sel.addEventListener('change', async () => {
+        const opId = sel.dataset.op;
+        const pct  = sel.value === '' ? null : parseInt(sel.value, 10);
+        try {
+          const saved = await DB.upsertInstalacionOp({ op_id: opId, porcentaje: pct });
+          this._upsertLocalInstalacionOp(saved);
+          this._draw();
+        } catch (e) { alert('Error al guardar el porcentaje: ' + e.message); }
+      });
+    });
+
+    // ── Editar / borrar entradas de la bitácora ──
+    wrap.querySelectorAll('.inst-entry-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const entry = this._dbData.bitacoraInstalacion.find(e => e.id === btn.dataset.id);
+        if (!entry) return;
+        this._editingEntry = entry.id;
+        this._editDraft = { tipo: entry.tipo || 'nota', texto: entry.texto || '' };
+        this._draw();
+      });
+    });
+    wrap.querySelectorAll('.inst-edit-tipo').forEach(sel => {
+      sel.addEventListener('change', () => { this._editDraft.tipo = sel.value; });
+    });
+    wrap.querySelectorAll('.inst-edit-texto').forEach(ta => {
+      ta.addEventListener('input', () => { this._editDraft.texto = ta.value; });
+    });
+    wrap.querySelectorAll('.inst-edit-cancel').forEach(btn => {
+      btn.addEventListener('click', () => { this._editingEntry = null; this._draw(); });
+    });
+    wrap.querySelectorAll('.inst-edit-save').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        btn.disabled = true;
+        try {
+          const saved = await DB.updateBitacoraEntry(id, {
+            tipo:  this._editDraft.tipo,
+            texto: this._editDraft.texto.trim() || null,
+          });
+          const arr = this._dbData.bitacoraInstalacion;
+          const idx = arr.findIndex(e => e.id === id);
+          if (idx >= 0) arr[idx] = saved;
+          this._editingEntry = null;
+          this._draw();
+        } catch (e) {
+          alert('Error: ' + e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+    wrap.querySelectorAll('.inst-entry-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Borrar esta entrada de la bitácora?')) return;
+        const id = btn.dataset.id;
+        const entry = this._dbData.bitacoraInstalacion.find(e => e.id === id);
+        btn.disabled = true;
+        try {
+          await DB.deleteBitacoraEntry(id);
+          if (entry?.foto_url) await DB.deleteFotoByUrl(entry.foto_url);
+          this._dbData.bitacoraInstalacion = this._dbData.bitacoraInstalacion.filter(e => e.id !== id);
+          this._draw();
+        } catch (e) {
+          alert('Error: ' + e.message);
+          btn.disabled = false;
+        }
+      });
     });
 
     wrap.querySelectorAll('[data-toggle]').forEach(btn => {
