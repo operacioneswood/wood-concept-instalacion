@@ -396,7 +396,8 @@ const Instalacion = {
       const installers  = this._instaladoresFor(op.id).join(', ') || '—';
       const estatus     = op.estatusInstalacion || 'SIN COMENZAR';
       const fechaFinReal = row?.fecha_fin ? this._fmtShort(new Date(row.fecha_fin + 'T12:00:00')) : '—';
-      const fechaFinEst  = it ? this._fmtShort(it.retoquesFinish || it.finish) : '—';
+      const fechaFinEst  = it ? this._fmtShort(it.finish) : '—';
+      const fechaFinRet  = it?.retoquesFinish ? this._fmtShort(it.retoquesFinish) : '—';
       const diasTxt      = it ? `${it.dias}d${it.diasRetoques > 0 ? ` + ${it.diasRetoques}d retoques` : ''}` : '—';
       return `<tr>
         <td class="td-num">${idx + 1}</td>
@@ -407,6 +408,7 @@ const Instalacion = {
         <td class="td-inst">${esc(installers)}</td>
         <td class="td-dias">${esc(diasTxt)}</td>
         <td class="td-date">${fechaFinEst}</td>
+        <td class="td-date">${fechaFinRet}</td>
         <td class="td-date">${fechaFinReal}</td>
       </tr>`;
     }).join('');
@@ -481,7 +483,7 @@ const Instalacion = {
 <table>
   <thead><tr>
     <th>#</th><th>No. OP</th><th>Descripción</th><th>Estatus</th><th>Avance</th><th>Instalador(es)</th>
-    <th>Días (instal. + retoques)</th><th>Fin estimado</th><th>Fin real</th>
+    <th>Días (instal. + retoques)</th><th>Fin est. instalación</th><th>Fin est. retoques</th><th>Fin real</th>
   </tr></thead>
   <tbody>${opRows}</tbody>
 </table>
