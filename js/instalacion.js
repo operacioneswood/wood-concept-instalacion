@@ -24,7 +24,6 @@ const Instalacion = {
   _searchQuery:   '',              // "En Instalación" search box value
   _DEFAULT_DIAS_ESTIMADOS: 2,
   _DEFAULT_DIAS_RETOQUES: 0,       // 0 = sin etapa de retoques en el cronograma, por defecto
-  _DIAS_LIMPIEZA: 4,
 
   render({ installOps, fieldIds, dbData }) {
     this._ops          = installOps || [];
@@ -221,8 +220,6 @@ const Instalacion = {
   // Cada OP se proyecta por separado: empieza en su fecha real de inicio
   // de instalación (u hoy, si todavía no tiene) y dura sus días estimados
   // hábiles. Si tiene días de Retoques, esa etapa va justo después.
-  // Termina con un buffer general de "limpieza" del proyecto completo,
-  // contado desde la OP que termina más tarde.
 
   _addBusinessDays(date, days) {
     const d = new Date(date);
@@ -264,10 +261,7 @@ const Instalacion = {
     }
     // Gantt rows and the report read top-to-bottom by start date.
     items.sort((a, b) => a.start - b.start);
-    const cursor = lastFinish;
-    const limpiezaStart  = new Date(cursor);
-    const limpiezaFinish = this._addBusinessDays(limpiezaStart, this._DIAS_LIMPIEZA);
-    return { items, limpiezaStart, limpiezaFinish };
+    return { items, lastFinish };
   },
 
   // Flattens each OP's install segment (and, when it has retoques days
@@ -294,18 +288,18 @@ const Instalacion = {
   },
 
   _ganttHtml(project, projOps) {
-    const { items, limpiezaStart, limpiezaFinish } = this._projectedSchedule(projOps);
+    const { items, lastFinish } = this._projectedSchedule(projOps);
     if (!items.length) return '';
 
     const bars_spec = this._ganttBars(items);
 
     const rangeStart = items[0].start;
-    const totalDays  = Math.max(1, daysBetween(rangeStart, limpiezaFinish));
+    const totalDays  = Math.max(1, daysBetween(rangeStart, lastFinish));
     const pxPerDay   = 26;
     const labelW     = 260;
     const chartW     = totalDays * pxPerDay;
     const rowH       = 28;
-    const rows       = bars_spec.length + 1; // + limpieza row
+    const rows       = bars_spec.length;
     const svgH       = rows * rowH + 30;
     const svgW       = labelW + chartW + 20;
 
@@ -327,7 +321,7 @@ const Instalacion = {
       bars += `<line x1="${xFor(d)}" y1="18" x2="${xFor(d)}" y2="${svgH}" stroke="#ece8e2" stroke-width="1"/>`;
     }
     // Today marker
-    if (today >= rangeStart && today <= limpiezaFinish) {
+    if (today >= rangeStart && today <= lastFinish) {
       bars += `<line x1="${xFor(today)}" y1="18" x2="${xFor(today)}" y2="${svgH}" stroke="#c41c1c" stroke-width="1.5" stroke-dasharray="3,2"/>`;
     }
 
@@ -344,27 +338,11 @@ const Instalacion = {
         <text x="${x2 + 6}" y="${y + rowH/2 + 4}" font-size="9.5" fill="#9b9490">${b.dias}d</text>
       `;
     });
-    // Limpieza row
-    {
-      const i = bars_spec.length;
-      const y = 26 + i * rowH;
-      const x1 = xFor(limpiezaStart), x2 = xFor(limpiezaFinish);
-      const w  = Math.max(4, x2 - x1);
-      bars += `
-        <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f" font-style="italic">Limpieza general</text>
-        <rect x="${x1}" y="${y+4}" width="${w}" height="${rowH-10}" rx="3" fill="#9b9490" opacity="0.7"/>
-      `;
-    }
 
     const svg = `<svg width="${svgW}" height="${svgH}" style="display:block;overflow:visible">${bars}</svg>`;
 
     return `
       <div class="inst-gantt">
-        <div class="inst-gantt-hdr">
-          <span>Inicio proyectado: <strong>${this._fmtShort(rangeStart)}</strong></span>
-          <span>Fin proyectado (con limpieza): <strong>${this._fmtShort(limpiezaFinish)}</strong></span>
-          <span class="cron-faint">Días de instalación y retoques editables abajo, en cada tarjeta.</span>
-        </div>
         <div style="overflow-x:auto;padding-bottom:6px">${svg}</div>
       </div>
     `;
