@@ -218,14 +218,11 @@ const Instalacion = {
 
   // ── 📅 Cronograma proyectado (secuencial, tipo Gantt) ────────
   //
-  // Igual al patrón que ya usaba el coordinador en MS Project: cada OP
-  // se instala una detrás de otra (no en paralelo), con una duración
-  // estimada en días hábiles; el fin de una es el inicio de la
-  // siguiente. Cada OP puede además tener su propia etapa de Retoques
-  // justo después de instalarse (con sus propios días, editables por
-  // separado) — esa etapa también ocupa tiempo real en la secuencia,
-  // antes de empezar la siguiente OP. Termina con un buffer general de
-  // "limpieza y retoques" del proyecto completo.
+  // Cada OP se proyecta por separado: empieza en su fecha real de inicio
+  // de instalación (u hoy, si todavía no tiene) y dura sus días estimados
+  // hábiles. Si tiene días de Retoques, esa etapa va justo después.
+  // Termina con un buffer general de "limpieza" del proyecto completo,
+  // contado desde la OP que termina más tarde.
 
   _addBusinessDays(date, days) {
     const d = new Date(date);
@@ -238,28 +235,36 @@ const Instalacion = {
     return d;
   },
 
+  // Each OP is projected on its own: it starts on its real "inicio de
+  // instalación" date, or today if it hasn't started yet, and ends after
+  // its estimated business days (+ retoques). E.g. no inicio + 3 días
+  // on Tue 6 oct → fin estimado Fri 9 oct.
   _projectedSchedule(projOps) {
-    const starts = projOps.map(op => op.envioInstalacion || op.fechaEmpaque).filter(Boolean);
-    let cursor = starts.length ? new Date(Math.min(...starts)) : new Date();
+    const today = new Date(); today.setHours(12, 0, 0, 0);
     const items = [];
+    let lastFinish = today;
     for (const op of projOps) {
       const row          = this._installRow(op.id);
       const dias         = row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS;
       const diasRetoques = row?.dias_retoques  ?? this._DEFAULT_DIAS_RETOQUES;
 
-      const start  = new Date(cursor);
+      const start  = op.inicioInstalacion ? new Date(op.inicioInstalacion) : new Date(today);
+      start.setHours(12, 0, 0, 0);
       const finish = this._addBusinessDays(start, dias);
-      cursor = finish;
 
       let retoquesStart = null, retoquesFinish = null;
       if (diasRetoques > 0) {
-        retoquesStart  = new Date(cursor);
+        retoquesStart  = new Date(finish);
         retoquesFinish = this._addBusinessDays(retoquesStart, diasRetoques);
-        cursor = retoquesFinish;
       }
 
+      const end = retoquesFinish || finish;
+      if (end > lastFinish) lastFinish = end;
       items.push({ op, start, finish, dias, diasRetoques, retoquesStart, retoquesFinish });
     }
+    // Gantt rows and the report read top-to-bottom by start date.
+    items.sort((a, b) => a.start - b.start);
+    const cursor = lastFinish;
     const limpiezaStart  = new Date(cursor);
     const limpiezaFinish = this._addBusinessDays(limpiezaStart, this._DIAS_LIMPIEZA);
     return { items, limpiezaStart, limpiezaFinish };
