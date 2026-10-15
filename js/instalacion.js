@@ -448,7 +448,14 @@ const Instalacion = {
   .cron-faint { color: #aaa; font-style: italic; }
   .inst-gantt-hdr { display: flex; gap: 16px; font-size: 9pt; color: #666; margin-bottom: 6pt; flex-wrap: wrap; }
   .inst-gantt-hdr strong { color: #111; }
-  .tbl-footer { margin-top: 10pt; font-size: 8pt; color: #aaa; text-align: right; }
+  body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; color: #000; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; }
+td { font-size: 10pt; color: #000; }
+th { font-size: 9pt; color: #333; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+.act-foto { margin-top: 5pt; }
+.act-foto img { display: block; max-width: 240pt; max-height: 180pt; border: 0.5pt solid #bbb; }
+th { font-size: 8.5pt; }
+.tbl-footer { margin-top: 10pt; font-size: 8pt; color: #aaa; text-align: right; }
 </style>
 </head>
 <body>
