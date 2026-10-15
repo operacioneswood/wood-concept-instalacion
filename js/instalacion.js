@@ -404,7 +404,7 @@ const Instalacion = {
       <td class="td-date">${new Date(e.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}</td>
       <td class="td-op">${esc(opLabelById[e.op_id] || '')}</td>
       <td class="td-tipo">${this._tipoIcon(e.tipo)}</td>
-      <td class="td-texto">${esc(e.texto || '')}</td>
+      <td class="td-texto">${esc(e.texto || '')}${e.foto_url ? `<div class="act-foto"><img src="${esc(e.foto_url)}" alt="Foto"></div>` : ''}</td>
     </tr>`).join('');
 
     const ganttHtml = this._ganttHtml(projName, projOps);
