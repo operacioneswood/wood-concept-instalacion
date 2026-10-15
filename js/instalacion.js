@@ -491,7 +491,8 @@ ${ganttHtml || '<p class="cron-faint">Sin datos suficientes para proyectar el cr
     win.document.write(html);
     win.document.close();
     win.focus();
-    setTimeout(() => win.print(), 400);
+    if (win.document.images.length) { const pend = [...win.document.images].map(im => im.complete ? null : new Promise(r => { im.onload = r; im.onerror = r; })); Promise.race([Promise.all(pend), new Promise(r => setTimeout(r, 20000))]).then(() => setTimeout(() => win.print(), 300)); return; }
+setTimeout(() => win.print(), 400);
   },
 
   _opCardHtml(op) {
