@@ -25,7 +25,7 @@ const Instalacion = {
   _DEFAULT_DIAS_ESTIMADOS: 2,
   _DEFAULT_DIAS_RETOQUES: 0,       // 0 = sin etapa de retoques en el cronograma, por defecto
 
-  render({ installOps, fieldIds, dbData }) {
+  render({ installOps, ops, fieldIds, dbData }) {
     this._ops          = installOps || [];
     this._fieldIds      = fieldIds || {};
     // The dropdown is built from Supabase (dbData.instaladores), not
@@ -35,6 +35,11 @@ const Instalacion = {
     // happens to already exist as a ClickUp option.
     this._instaladores = (dbData?.instaladores || []).map(r => r.nombre);
     this._dbData        = dbData;
+// OPs que regresaron a Pintura (p. ej. retoques) pero ya tienen historia de instalación siguen disponibles en "En Instalación".
+const instIds = new Set([...(dbData?.asignaciones || []).filter(a => a.etapa === 'instalacion').map(a => a.op_id), ...(dbData?.bitacoraInstalacion || []).map(e => e.op_id), ...(dbData?.instalacionOps || []).map(r => r.op_id)]);
+const haveIds = new Set(this._ops.map(o => o.id));
+const backInPintura = (ops || []).filter(o => o.status === 'en pintura' && !haveIds.has(o.id) && (instIds.has(o.id) || (o.estatusInstalacion && normStr(o.estatusInstalacion) !== 'sin comenzar'))).map(o => ({ ...o, status: 'en instalacion', enPintura: true }));
+this._ops = [...this._ops, ...backInPintura];
     this._draw();
   },
 
