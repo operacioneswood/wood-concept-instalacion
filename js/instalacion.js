@@ -279,6 +279,10 @@ this._ops = [...this._ops, ...backInPintura];
     const bars = [];
     for (const it of items) {
       const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
+      if (it.dias === 0 && !(it.diasRetoques > 0)) {   // 0 días = OP parada, sin línea de tiempo
+        bars.push({ paused: true, label, title: it.op.name });
+        continue;
+      }
       bars.push({
         start: it.start, finish: it.finish, dias: it.dias,
         label, title: it.op.name, color: '#3b82f6',
@@ -311,7 +315,7 @@ this._ops = [...this._ops, ...backInPintura];
     const labelW     = 260;
     const doneW      = 120;
     const pxPerDay   = opts.print ? Math.min(26, Math.max(9, (760 - labelW - 20) / totalDays)) : 26;
-    const chartW     = Math.max(totalDays * pxPerDay, done.length ? doneW + 10 : 0);
+    const chartW     = Math.max(totalDays * pxPerDay, bars_spec.some(b => b.done || b.paused) ? doneW + 10 : 0);
     const rowH       = 28;
     const rows       = bars_spec.length;
     const svgH       = rows * rowH + 30;
@@ -341,14 +345,16 @@ this._ops = [...this._ops, ...backInPintura];
 
     bars_spec.forEach((b, i) => {
       const y  = 26 + i * rowH;
-      if (b.done) {
-        const dl = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
+      if (b.done || b.paused) {
+        const dl   = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
+        const fill = b.done ? '#16a34a' : '#8a8580';
+        const txt  = b.done ? '✔ OP completa' : '⏸ OP parada';
         bars += `
           <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f">${esc(dl)}</text>
-          <rect x="${labelW + 4}" y="${y+4}" width="${doneW}" height="${rowH-10}" rx="3" fill="#16a34a">
-            <title>${esc(b.title)}: OP completa</title>
+          <rect x="${labelW + 4}" y="${y+4}" width="${doneW}" height="${rowH-10}" rx="3" fill="${fill}">
+            <title>${esc(b.title)}: ${b.done ? 'OP completa' : 'OP parada (0 días)'}</title>
           </rect>
-          <text x="${labelW + 4 + doneW/2}" y="${y + rowH/2 + 4}" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">✔ OP completa</text>
+          <text x="${labelW + 4 + doneW/2}" y="${y + rowH/2 + 4}" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">${txt}</text>
         `;
         return;
       }
@@ -630,7 +636,7 @@ setTimeout(() => win.print(), 400);
               `).join('')}
             </div>
             <label class="field-label">Días estimados — Instalación</label>
-            <input type="number" min="1" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
+            <input type="number" min="0" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
               value="${row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS}" style="max-width:80px">
             <label class="field-label" style="margin-top:8px">Días estimados — Retoques (0 = sin etapa de retoques)</label>
             <input type="number" min="0" class="field-input inst-dias-retoques-inp" data-op="${esc(op.id)}"
@@ -849,7 +855,8 @@ setTimeout(() => win.print(), 400);
     wrap.querySelectorAll('.inst-dias-estimados-inp').forEach(inp => {
       inp.addEventListener('change', async () => {
         const opId = inp.dataset.op;
-        const dias = Math.max(1, parseInt(inp.value, 10) || this._DEFAULT_DIAS_ESTIMADOS);
+        const n    = parseInt(inp.value, 10);
+        const dias = isNaN(n) ? this._DEFAULT_DIAS_ESTIMADOS : Math.max(0, n);   // 0 = OP parada
         try {
           const saved = await DB.upsertInstalacionOp({ op_id: opId, dias_estimados: dias });
           this._upsertLocalInstalacionOp(saved);
@@ -1028,18 +1035,10 @@ setTimeout(() => win.print(), 400);
         const op = this._ops.find(o => o.id === opId);
         btn.disabled = true; btn.textContent = '...';
         try {
-          // El estado de la tarea en ClickUp pasa a "completo" (primero, para no dejar a medias el resto).
+          // Solo cambia el estado de la tarea en ClickUp a "completo": no toca fecha de fin, bitácora ni estatus de instalación.
           const stName = App._data?.completoStatus || 'completo';
           await PlantaAPI.setStatus(opId, stName);
-          const optId = this._fieldIds.estatusInstalacionOpts?.[normStr('COMPLETADO')];
-          if (optId && this._fieldIds.estatusInstalacion) {
-            await PlantaAPI.setField(opId, this._fieldIds.estatusInstalacion, optId);
-          }
-          const saved = await DB.upsertInstalacionOp({ op_id: opId, fecha_fin: todayIso() });
-          this._upsertLocalInstalacionOp(saved);
-          const entry = await DB.addBitacoraEntry({ op_id: opId, tipo: 'fin', texto: 'Instalación completada' });
-          this._dbData.bitacoraInstalacion.unshift(entry);
-          if (op) { op.estatusInstalacion = 'COMPLETADO'; op.status = 'completo'; op.statusRaw = stName; }
+          if (op) { op.status = 'completo'; op.statusRaw = stName; }
           PlantaAPI.clearCache();
           this._draw();
         } catch (e) {
