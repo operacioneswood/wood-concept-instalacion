@@ -279,10 +279,7 @@ this._ops = [...this._ops, ...backInPintura];
     const bars = [];
     for (const it of items) {
       const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
-      if (it.dias === 0 && !(it.diasRetoques > 0)) {   // 0 días = OP parada, sin línea de tiempo
-        bars.push({ paused: true, label, title: it.op.name });
-        continue;
-      }
+      if (it.dias === 0 && !(it.diasRetoques > 0)) continue;   // 0 días = OP parada: no sale en el cronograma
       bars.push({
         start: it.start, finish: it.finish, dias: it.dias,
         label, title: it.op.name, color: '#3b82f6',
@@ -309,13 +306,14 @@ this._ops = [...this._ops, ...backInPintura];
     if (!items.length && !done.length) return '';
 
     const bars_spec = this._ganttBars(items, done);
+    if (!bars_spec.length) return '';
 
     const rangeStart = items.length ? items[0].start : (() => { const t = new Date(); t.setHours(12, 0, 0, 0); return t; })();
     const totalDays  = Math.max(1, daysBetween(rangeStart, lastFinish));
     const labelW     = 260;
     const doneW      = 120;
     const pxPerDay   = opts.print ? Math.min(26, Math.max(9, (760 - labelW - 20) / totalDays)) : 26;
-    const chartW     = Math.max(totalDays * pxPerDay, bars_spec.some(b => b.done || b.paused) ? doneW + 10 : 0);
+    const chartW     = Math.max(totalDays * pxPerDay, done.length ? doneW + 10 : 0);
     const rowH       = 28;
     const rows       = bars_spec.length;
     const svgH       = rows * rowH + 30;
@@ -345,16 +343,14 @@ this._ops = [...this._ops, ...backInPintura];
 
     bars_spec.forEach((b, i) => {
       const y  = 26 + i * rowH;
-      if (b.done || b.paused) {
-        const dl   = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
-        const fill = b.done ? '#16a34a' : '#8a8580';
-        const txt  = b.done ? '✔ OP completa' : '⏸ OP parada';
+      if (b.done) {
+        const dl = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
         bars += `
           <text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f">${esc(dl)}</text>
-          <rect x="${labelW + 4}" y="${y+4}" width="${doneW}" height="${rowH-10}" rx="3" fill="${fill}">
-            <title>${esc(b.title)}: ${b.done ? 'OP completa' : 'OP parada (0 días)'}</title>
+          <rect x="${labelW + 4}" y="${y+4}" width="${doneW}" height="${rowH-10}" rx="3" fill="#16a34a">
+            <title>${esc(b.title)}: OP completa</title>
           </rect>
-          <text x="${labelW + 4 + doneW/2}" y="${y + rowH/2 + 4}" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">${txt}</text>
+          <text x="${labelW + 4 + doneW/2}" y="${y + rowH/2 + 4}" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">✔ OP completa</text>
         `;
         return;
       }
