@@ -230,6 +230,20 @@ const PlantaAPI = {
     catch { return {}; }
   },
 
+  // Changes the task's status (e.g. to "completo") in ClickUp.
+  async setStatus(taskId, status) {
+    const apiKey = this.getApiKey();
+    const res = await fetch(`https://api.clickup.com/api/v2/task/${taskId}`, {
+      method:  'PUT',
+      headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => String(res.status));
+      throw new Error(`ClickUp status ${res.status}: ${msg}`);
+    }
+  },
+
   // Clears a custom field's value (ClickUp has no "set to null" — it's a DELETE).
   async removeField(taskId, fieldId) {
     const apiKey = this.getApiKey();
@@ -317,7 +331,10 @@ const PlantaAPI = {
 
     prog(`${installOps.length} OPs en empaque/instalación, ${ops.length} en fábrica.`);
 
-    const result = { installOps, ops, instaladoresList, fieldIds, lastSync: Date.now() };
+    // Exact spelling of the "completo" status in this workspace (for setStatus).
+    const completoStatus = rawTasks.map(t => t.status?.status).find(s => s && normStr(s) === 'completo') || 'completo';
+
+    const result = { installOps, ops, instaladoresList, fieldIds, completoStatus, lastSync: Date.now() };
     this._setCache(result);
     return result;
   },
