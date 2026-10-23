@@ -279,7 +279,10 @@ this._ops = [...this._ops, ...backInPintura];
     const bars = [];
     for (const it of items) {
       const label = `${it.op.noOp ? it.op.noOp + ' — ' : ''}${it.op.name}`;
-      if (it.dias === 0 && !(it.diasRetoques > 0)) continue;   // 0 días = OP parada: no sale en el cronograma
+      if (it.dias === 0 && !(it.diasRetoques > 0)) {   // 0 días = sin tiempo estipulado: sale el nombre, sin barra
+        bars.push({ noBar: true, label, title: it.op.name });
+        continue;
+      }
       bars.push({
         start: it.start, finish: it.finish, dias: it.dias,
         label, title: it.op.name, color: '#3b82f6',
@@ -352,6 +355,11 @@ this._ops = [...this._ops, ...backInPintura];
           </rect>
           <text x="${labelW + 4 + doneW/2}" y="${y + rowH/2 + 4}" font-size="10.5" font-weight="700" fill="#ffffff" text-anchor="middle">✔ OP completa</text>
         `;
+        return;
+      }
+      if (b.noBar) {
+        const nl = b.label.length > 42 ? b.label.slice(0,41)+'…' : b.label;
+        bars += `<text x="4" y="${y + rowH/2 + 4}" font-size="11" fill="#3a352f">${esc(nl)}</text>`;
         return;
       }
       const x1 = xFor(b.start), x2 = xFor(b.finish);
