@@ -35,7 +35,7 @@ const Acta = {
       fecha: todayIso(),
       obs: '',
       cNombre: saved.nombre || 'Jonathan González',
-      cCargo:  saved.cargo  || '',
+      cCargo:  saved.cargo  || 'Jefe de Instalaciones',
       kNombre: '', kCargo: '', kEmpresa: '',
       firmaC: null, firmaK: null,
       fotoUrl: null,
