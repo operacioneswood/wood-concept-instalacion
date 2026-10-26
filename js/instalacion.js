@@ -243,6 +243,44 @@ this._ops = [...this._ops, ...backInPintura];
   // instalación" date, or today if it hasn't started yet, and ends after
   // its estimated business days (+ retoques). E.g. no inicio + 3 días
   // on Tue 6 oct → fin estimado Fri 9 oct.
+  // Fecha de inicio de la barra de una OP. Una vez que se fijan los días,
+  // la fecha queda guardada y ya no se corre con el calendario:
+  //   1. inicio real de instalación (ClickUp), si existe
+  //   2. fecha de inicio planificada guardada (fecha_inicio_plan)
+  //   3. filas con días guardados antes de existir ese campo: la fecha en que se guardaron
+  //   4. OPs sin días fijados todavía: hoy (aún sin programar)
+  _planStart(op, row, today) {
+    if (op.inicioInstalacion) return new Date(op.inicioInstalacion);
+    if (row?.fecha_inicio_plan) {
+      const [y, m, d] = String(row.fecha_inicio_plan).slice(0, 10).split('-').map(Number);
+      return new Date(y, m - 1, d, 12);
+    }
+    if (row && (row.dias_estimados != null || row.dias_retoques != null) && row.updated_at) {
+      const u = new Date(row.updated_at);
+      return new Date(u.getFullYear(), u.getMonth(), u.getDate(), 12);
+    }
+    return new Date(today);
+  },
+
+  // Guarda días (y, la primera vez, la fecha de inicio planificada para que
+  // el cronograma no se siga corriendo). Si la columna fecha_inicio_plan aún
+  // no existe en Supabase, guarda los días igual.
+  async _saveSchedule(opId, fields) {
+    const op  = this._ops.find(o => o.id === opId);
+    const row = this._installRow(opId);
+    const payload = { op_id: opId, ...fields };
+    if (op && !op.inicioInstalacion && !row?.fecha_inicio_plan) {
+      payload.fecha_inicio_plan = this._isoDate(this._planStart(op, row, new Date()));
+    }
+    try {
+      return await DB.upsertInstalacionOp(payload);
+    } catch (e) {
+      if (payload.fecha_inicio_plan === undefined) throw e;
+      delete payload.fecha_inicio_plan;
+      return await DB.upsertInstalacionOp(payload);
+    }
+  },
+
   _projectedSchedule(projOps) {
     const today = new Date(); today.setHours(12, 0, 0, 0);
     const items = [];
@@ -254,7 +292,7 @@ this._ops = [...this._ops, ...backInPintura];
       const dias         = row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS;
       const diasRetoques = row?.dias_retoques  ?? this._DEFAULT_DIAS_RETOQUES;
 
-      const start  = op.inicioInstalacion ? new Date(op.inicioInstalacion) : new Date(today);
+      const start  = this._planStart(op, row, today);
       start.setHours(12, 0, 0, 0);
       const finish = this._addBusinessDays(start, dias);
 
@@ -640,6 +678,10 @@ setTimeout(() => win.print(), 400);
                 </span>
               `).join('')}
             </div>
+            ${op.inicioInstalacion ? '' : `
+              <label class="field-label">Inicio del cronograma <span style="font-weight:400;color:#888">(queda fija; se usa el "Inicio instalación" real cuando exista)</span></label>
+              <input type="date" class="field-input inst-plan-inp" data-op="${esc(op.id)}" value="${this._isoDate(this._planStart(op, row, new Date()))}" style="max-width:170px">
+            `}
             <label class="field-label">Días estimados — Instalación</label>
             <input type="number" min="0" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
               value="${row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS}" style="max-width:80px">
@@ -865,13 +907,25 @@ setTimeout(() => win.print(), 400);
       });
     });
 
+    wrap.querySelectorAll('.inst-plan-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const opId = inp.dataset.op;
+        if (!inp.value) return;
+        try {
+          const saved = await DB.upsertInstalacionOp({ op_id: opId, fecha_inicio_plan: inp.value });
+          this._upsertLocalInstalacionOp(saved);
+          this._draw();
+        } catch (e) { alert('No se pudo guardar la fecha de inicio: ' + e.message + ' — ¿ya se creó la columna fecha_inicio_plan en Supabase?'); }
+      });
+    });
+
     wrap.querySelectorAll('.inst-dias-estimados-inp').forEach(inp => {
       inp.addEventListener('change', async () => {
         const opId = inp.dataset.op;
         const n    = parseInt(inp.value, 10);
         const dias = isNaN(n) ? this._DEFAULT_DIAS_ESTIMADOS : Math.max(0, n);   // 0 = OP parada
         try {
-          const saved = await DB.upsertInstalacionOp({ op_id: opId, dias_estimados: dias });
+          const saved = await this._saveSchedule(opId, { dias_estimados: dias });
           this._upsertLocalInstalacionOp(saved);
           this._draw();
         } catch (e) { console.warn('[Instalacion] dias_estimados save:', e.message); }
@@ -883,7 +937,7 @@ setTimeout(() => win.print(), 400);
         const opId = inp.dataset.op;
         const dias = Math.max(0, parseInt(inp.value, 10) || 0);
         try {
-          const saved = await DB.upsertInstalacionOp({ op_id: opId, dias_retoques: dias });
+          const saved = await this._saveSchedule(opId, { dias_retoques: dias });
           this._upsertLocalInstalacionOp(saved);
           this._draw();
         } catch (e) { console.warn('[Instalacion] dias_retoques save:', e.message); }
