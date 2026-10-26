@@ -140,6 +140,24 @@ const DB = {
   },
 
   // ════════════════════════════════════════════════════════
+  // ACTAS_ENTREGA  (Acta de Entrega Final por proyecto, con firmas en
+  // pantalla guardadas como PNG)
+  // ════════════════════════════════════════════════════════
+  async getActas(proyecto_key) {
+    return this._q(sb => sb.from('actas_entrega').select('*').eq('proyecto_key', proyecto_key).order('created_at', { ascending: false }));
+  },
+
+  async saveActa(rec) {
+    return this._q(sb => sb.from('actas_entrega')
+      .upsert({ ...rec, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      .select().single());
+  },
+
+  async deleteActa(id) {
+    const { error } = await this._sb.from('actas_entrega').delete().eq('id', id);
+    if (error) throw error;
+  },
+  // ════════════════════════════════════════════════════════
   // SETUP — create tables if they don't exist (run once in the
   // Supabase SQL editor; kept here for reference)
   // ════════════════════════════════════════════════════════
@@ -186,5 +204,29 @@ const DB = {
     drop policy if exists "Anon upload instalacion-fotos" on storage.objects;
     create policy "Anon upload instalacion-fotos" on storage.objects
       for insert with check (bucket_id = 'instalacion-fotos');
-  `,
+    create table if not exists actas_entrega (
+      id                  uuid primary key,
+      proyecto            text not null,
+      proyecto_key        text not null,
+      contratante         text,
+      cotizacion          text,
+      ops                 jsonb,
+      fecha               date,
+      observaciones       text,
+      contratista_nombre  text,
+      contratista_cargo   text,
+      contratante_nombre  text,
+      contratante_cargo   text,
+      contratante_empresa text,
+      firma_contratista   text,
+      firma_contratante   text,
+      foto_url            text,
+      created_at          timestamptz not null default now(),
+      updated_at          timestamptz not null default now()
+    );
+
+    alter table actas_entrega enable row level security;
+    drop policy if exists "actas_entrega acceso publico" on actas_entrega;
+    create policy "actas_entrega acceso publico" on actas_entrega
+      for all to anon, authenticated using (true) with check (true);  `,
 };
