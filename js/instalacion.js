@@ -211,6 +211,7 @@ this._ops = [...this._ops, ...backInPintura];
             <span class="cron-hdr-count">${projOps.length} OP${projOps.length !== 1 ? 's' : ''}${projOps.some(o => o.status === 'completo') ? ` · ${projOps.filter(o => o.status === 'completo').length} completa${projOps.filter(o => o.status === 'completo').length !== 1 ? 's' : ''}` : ''}</span>
             <button class="btn-secondary btn-sm inst-gantt-toggle" data-proj="${esc(project)}">📅 Cronograma</button>
             <button class="btn-secondary btn-sm inst-print-btn" data-proj="${esc(project)}" title="Imprimir resumen de instalación de ${esc(project)}">🖨 Imprimir</button>
+            <button class="btn-secondary btn-sm inst-acta-btn" data-proj="${esc(project)}" title="Acta de entrega final de ${esc(project)}">📄 Acta de entrega</button>
           </span>
         </div>
         ${this._ganttOpen.has(project) ? this._ganttHtml(project, projOps) : ''}
@@ -853,6 +854,14 @@ setTimeout(() => win.print(), 400);
         const proj = btn.dataset.proj;
         const projOps = this._ops.filter(o => (o.project || '(Sin proyecto)') === proj && (o.status === 'en instalacion' || o.status === 'completo'));
         this._printProyecto(proj, projOps);
+      });
+    });
+
+    wrap.querySelectorAll('.inst-acta-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const proj = btn.dataset.proj;
+        const projOps = this._ops.filter(o => (o.project || '(Sin proyecto)') === proj && (o.status === 'en instalacion' || o.status === 'completo'));
+        Acta.open(proj, projOps);
       });
     });
 
