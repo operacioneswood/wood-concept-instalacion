@@ -128,9 +128,10 @@ const DB = {
     return this._q(sb => sb.from('instalacion_ops').select('*'));
   },
 
-  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados, dias_retoques, porcentaje, fecha_inicio_plan }) {
+  async upsertInstalacionOp({ op_id, fecha_fin, llego_completa, faltante, dias_estimados, dias_retoques, porcentaje, fecha_inicio_plan, fecha_inicio_retoques }) {
     const row = { op_id, updated_at: new Date().toISOString() };
-    if (fecha_inicio_plan !== undefined) row.fecha_inicio_plan = fecha_inicio_plan;
+    if (fecha_inicio_plan     !== undefined) row.fecha_inicio_plan     = fecha_inicio_plan;
+    if (fecha_inicio_retoques !== undefined) row.fecha_inicio_retoques = fecha_inicio_retoques;
     if (porcentaje      !== undefined) row.porcentaje     = porcentaje;
     if (fecha_fin       !== undefined) row.fecha_fin      = fecha_fin;
     if (llego_completa  !== undefined) row.llego_completa = llego_completa;
@@ -186,6 +187,7 @@ const DB = {
     alter table instalacion_ops add column if not exists dias_retoques integer;
     alter table instalacion_ops add column if not exists porcentaje integer;
     alter table instalacion_ops add column if not exists fecha_inicio_plan date;
+    alter table instalacion_ops add column if not exists fecha_inicio_retoques date;
 
     create table if not exists instaladores (
       nombre           text primary key,
