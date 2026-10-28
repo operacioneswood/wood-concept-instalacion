@@ -243,18 +243,18 @@ this._ops = [...this._ops, ...backInPintura];
   // instalación" date, or today if it hasn't started yet, and ends after
   // its estimated business days (+ retoques). E.g. no inicio + 3 días
   // on Tue 6 oct → fin estimado Fri 9 oct.
-  // Fecha de inicio de la barra de una OP. Una vez que se fijan los días,
-  // la fecha queda guardada y ya no se corre con el calendario:
-  //   1. inicio real de instalación (ClickUp), si existe
-  //   2. fecha de inicio planificada guardada (fecha_inicio_plan)
+  // Las fechas de inicio del cronograma son independientes de los días: una
+  // vez fijadas (o la primera vez que se guardan días) quedan guardadas y
+  // solo cambian si se cambian a mano.
+  //
+  // Inicio de la instalación:
+  //   1. fecha de inicio guardada (fecha_inicio_plan)
+  //   2. inicio real de instalación (ClickUp), si existe
   //   3. filas con días guardados antes de existir ese campo: la fecha en que se guardaron
   //   4. OPs sin días fijados todavía: hoy (aún sin programar)
   _planStart(op, row, today) {
+    if (row?.fecha_inicio_plan) return this._parseIso(row.fecha_inicio_plan);
     if (op.inicioInstalacion) return new Date(op.inicioInstalacion);
-    if (row?.fecha_inicio_plan) {
-      const [y, m, d] = String(row.fecha_inicio_plan).slice(0, 10).split('-').map(Number);
-      return new Date(y, m - 1, d, 12);
-    }
     if (row && (row.dias_estimados != null || row.dias_retoques != null) && row.updated_at) {
       const u = new Date(row.updated_at);
       return new Date(u.getFullYear(), u.getMonth(), u.getDate(), 12);
@@ -262,21 +262,51 @@ this._ops = [...this._ops, ...backInPintura];
     return new Date(today);
   },
 
-  // Guarda días (y, la primera vez, la fecha de inicio planificada para que
-  // el cronograma no se siga corriendo). Si la columna fecha_inicio_plan aún
-  // no existe en Supabase, guarda los días igual.
+  // Inicio de retoques: la fecha guardada; si no hay, al terminar la instalación.
+  _retoquesStart(row, finish) {
+    return row?.fecha_inicio_retoques ? this._parseIso(row.fecha_inicio_retoques) : new Date(finish);
+  },
+
+  _parseIso(s) {
+    const [y, m, d] = String(s).slice(0, 10).split('-').map(Number);
+    return new Date(y, m - 1, d, 12);
+  },
+
+  // Fechas vigentes de una OP (las mismas que usa el cronograma).
+  _scheduleDates(op, row) {
+    const start  = this._planStart(op, row, new Date()); start.setHours(12, 0, 0, 0);
+    const finish = this._addBusinessDays(start, row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS);
+    return { start, finish, retStart: this._retoquesStart(row, finish) };
+  },
+
+  // Guarda días y/o fechas de inicio. Al guardar por primera vez, deja
+  // guardadas también las fechas de inicio vigentes (instalación y
+  // retoques) para que no se corran al cambiar los días. Si las columnas
+  // aún no existen en Supabase guarda lo demás igual y avisa una vez.
   async _saveSchedule(opId, fields) {
     const op  = this._ops.find(o => o.id === opId);
     const row = this._installRow(opId);
     const payload = { op_id: opId, ...fields };
-    if (op && !op.inicioInstalacion && !row?.fecha_inicio_plan) {
-      payload.fecha_inicio_plan = this._isoDate(this._planStart(op, row, new Date()));
+    const auto = [];
+    if (op) {
+      const cur = this._scheduleDates(op, row);
+      if (payload.fecha_inicio_plan === undefined && !row?.fecha_inicio_plan) {
+        payload.fecha_inicio_plan = this._isoDate(cur.start); auto.push('fecha_inicio_plan');
+      }
+      const diasRet = payload.dias_retoques ?? row?.dias_retoques ?? this._DEFAULT_DIAS_RETOQUES;
+      if (payload.fecha_inicio_retoques === undefined && !row?.fecha_inicio_retoques && diasRet > 0) {
+        payload.fecha_inicio_retoques = this._isoDate(cur.retStart); auto.push('fecha_inicio_retoques');
+      }
     }
     try {
       return await DB.upsertInstalacionOp(payload);
     } catch (e) {
-      if (payload.fecha_inicio_plan === undefined) throw e;
-      delete payload.fecha_inicio_plan;
+      if (!auto.length) throw e;
+      auto.forEach(k => delete payload[k]);
+      if (!this._warnedCols) {
+        this._warnedCols = true;
+        alert('Los días se guardaron, pero para que las fechas del cronograma queden fijas falta crear las columnas fecha_inicio_plan y fecha_inicio_retoques en Supabase (SQL pendiente).');
+      }
       return await DB.upsertInstalacionOp(payload);
     }
   },
@@ -298,7 +328,7 @@ this._ops = [...this._ops, ...backInPintura];
 
       let retoquesStart = null, retoquesFinish = null;
       if (diasRetoques > 0) {
-        retoquesStart  = new Date(finish);
+        retoquesStart  = this._retoquesStart(row, finish);
         retoquesFinish = this._addBusinessDays(retoquesStart, diasRetoques);
       }
 
@@ -678,16 +708,18 @@ setTimeout(() => win.print(), 400);
                 </span>
               `).join('')}
             </div>
-            ${op.inicioInstalacion ? '' : `
-              <label class="field-label">Inicio del cronograma <span style="font-weight:400;color:#888">(queda fija; se usa el "Inicio instalación" real cuando exista)</span></label>
-              <input type="date" class="field-input inst-plan-inp" data-op="${esc(op.id)}" value="${this._isoDate(this._planStart(op, row, new Date()))}" style="max-width:170px">
-            `}
-            <label class="field-label">Días estimados — Instalación</label>
+            <label class="field-label">Inicio del cronograma <span style="font-weight:400;color:#888">(queda fija; solo cambia si la cambias)</span></label>
+            <input type="date" class="field-input inst-plan-inp" data-op="${esc(op.id)}" value="${this._isoDate(this._scheduleDates(op, row).start)}" style="max-width:170px">
+            <label class="field-label" style="margin-top:8px">Días estimados — Instalación</label>
             <input type="number" min="0" class="field-input inst-dias-estimados-inp" data-op="${esc(op.id)}"
               value="${row?.dias_estimados ?? this._DEFAULT_DIAS_ESTIMADOS}" style="max-width:80px">
             <label class="field-label" style="margin-top:8px">Días estimados — Retoques (0 = sin etapa de retoques)</label>
             <input type="number" min="0" class="field-input inst-dias-retoques-inp" data-op="${esc(op.id)}"
               value="${row?.dias_retoques ?? this._DEFAULT_DIAS_RETOQUES}" style="max-width:80px">
+            ${(row?.dias_retoques ?? this._DEFAULT_DIAS_RETOQUES) > 0 ? `
+              <label class="field-label" style="margin-top:8px">Inicio de retoques <span style="font-weight:400;color:#888">(también queda fija)</span></label>
+              <input type="date" class="field-input inst-ret-inp" data-op="${esc(op.id)}" value="${this._isoDate(this._scheduleDates(op, row).retStart)}" style="max-width:170px">
+            ` : ''}
             ${op.status !== 'completo' ? `<button class="btn-primary btn-sm inst-btn-completar" data-op="${esc(op.id)}" style="margin-top:8px">✔ Marcar instalación completa</button>` : ''}
           </div>
         </div>
@@ -912,10 +944,22 @@ setTimeout(() => win.print(), 400);
         const opId = inp.dataset.op;
         if (!inp.value) return;
         try {
-          const saved = await DB.upsertInstalacionOp({ op_id: opId, fecha_inicio_plan: inp.value });
+          const saved = await this._saveSchedule(opId, { fecha_inicio_plan: inp.value });
           this._upsertLocalInstalacionOp(saved);
           this._draw();
-        } catch (e) { alert('No se pudo guardar la fecha de inicio: ' + e.message + ' — ¿ya se creó la columna fecha_inicio_plan en Supabase?'); }
+        } catch (e) { alert('No se pudo guardar la fecha de inicio: ' + e.message + ' — ¿ya se crearon las columnas fecha_inicio_plan y fecha_inicio_retoques en Supabase?'); }
+      });
+    });
+
+    wrap.querySelectorAll('.inst-ret-inp').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const opId = inp.dataset.op;
+        if (!inp.value) return;
+        try {
+          const saved = await this._saveSchedule(opId, { fecha_inicio_retoques: inp.value });
+          this._upsertLocalInstalacionOp(saved);
+          this._draw();
+        } catch (e) { alert('No se pudo guardar la fecha de retoques: ' + e.message + ' — ¿ya se crearon las columnas fecha_inicio_plan y fecha_inicio_retoques en Supabase?'); }
       });
     });
 
