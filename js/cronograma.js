@@ -9,6 +9,7 @@
 
 const Cronograma = {
   _ops: [],
+  _searchQuery: '',
 
   render({ ops, installOps }) {
     // Empaque ya salió de fábrica, pero sigue siendo parte de lo que el
@@ -29,9 +30,43 @@ const Cronograma = {
           <h2 class="tab-title">📊 Cronograma de Fábrica</h2>
           <p class="tab-sub">Solo lectura — las fechas se editan desde Wood Concept · Planta.</p>
         </div>
+        <div class="asign-search-wrap">
+          <input type="search" id="cron-search" class="asign-search-input"
+            placeholder="Buscar proyecto o número de OP..." value="${esc(this._searchQuery)}">
+        </div>
         <div class="cron-body">${this._renderProyecto()}</div>
+        <div class="cron-empty" id="cron-search-empty" style="display:none">Ninguna OP coincide con la búsqueda.</div>
       </div>
     `;
+    this._bindSearch(wrap);
+  },
+
+  // Igual que el buscador de "En Instalación": filtra mostrando/ocultando
+  // filas y bloques, sin volver a dibujar (no pierde el foco al escribir).
+  _bindSearch(wrap) {
+    const input = wrap.querySelector('#cron-search');
+    if (!input) return;
+    const apply = () => {
+      const q = input.value.toLowerCase().trim();
+      this._searchQuery = input.value;
+      let visible = 0;
+      wrap.querySelectorAll('.cron-block').forEach(block => {
+        const rows = [...block.querySelectorAll('tbody tr')];
+        const projMatch = !q || (block.dataset.search || '').includes(q);
+        let shown = 0;
+        rows.forEach(r => {
+          const ok = projMatch || (r.dataset.search || '').includes(q);
+          r.style.display = ok ? '' : 'none';
+          if (ok) shown++;
+        });
+        block.style.display = shown ? '' : 'none';
+        visible += shown;
+      });
+      const empty = wrap.querySelector('#cron-search-empty');
+      if (empty) empty.style.display = (q && !visible) ? '' : 'none';
+    };
+    input.addEventListener('input', apply);
+    if (this._searchQuery) apply();
   },
 
   _renderProyecto() {
@@ -65,7 +100,7 @@ const Cronograma = {
       const rows = opsorted.map(op => {
         const st = this._statusInfo(op.salidaFabrica);
         return `
-          <tr>
+          <tr data-search="${esc(`${op.noOp || ''} ${op.name || ''}`.toLowerCase())}">
             <td data-label="No. OP">${op.noOp ? `<span class="cron-op-num">${esc(op.noOp)}</span>` : '<span class="cron-faint">—</span>'}</td>
             <td class="cron-name" data-label="Descripción">${esc(op.name)}</td>
             <td class="cron-etapa-cell" data-label="Etapa">${this._opStatusBadge(op)}</td>
@@ -77,7 +112,7 @@ const Cronograma = {
       }).join('');
 
       return `
-        <div class="cron-block">
+        <div class="cron-block" data-search="${esc(project.toLowerCase())}">
           <div class="cron-block-hdr">
             <span class="cron-hdr-name">${esc(project)}</span>
             <span class="cron-hdr-meta">
