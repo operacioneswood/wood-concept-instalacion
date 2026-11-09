@@ -98,6 +98,7 @@ this._ops = [...this._ops, ...backInPintura];
           <button class="cron-subtab ${this._sub === 'empaque' ? 'active' : ''}" data-sub="empaque">📦 Empaque (${this._ops.filter(o => o.status === 'empaque').length})</button>
           <button class="cron-subtab ${this._sub === 'instalacion' ? 'active' : ''}" data-sub="instalacion">🔧 En Instalación (${this._ops.filter(o => o.status === 'en instalacion').length})</button>
           <button class="cron-subtab ${this._sub === 'rendimiento' ? 'active' : ''}" data-sub="rendimiento">📊 Rendimiento</button>
+          <button class="btn-primary btn-sm inst-nov-btn" style="margin-left:auto;align-self:center" title="Resumen de las actualizaciones más recientes de los proyectos">🔔 Actualizaciones</button>
         </div>
         <div class="cron-body" id="inst-body">
           ${this._sub === 'empaque' ? this._renderEmpaque()
@@ -111,9 +112,54 @@ this._ops = [...this._ops, ...backInPintura];
       btn.addEventListener('click', () => { this._sub = btn.dataset.sub; this._draw(); });
     });
 
+    wrap.querySelector('.inst-nov-btn')?.addEventListener('click', () => Novedades.open());
+
     this._bindEmpaque(wrap);
     this._bindInstalacion(wrap);
     this._bindSearch(wrap);
+  },
+
+  // ── Registro de cambios (alimenta el informe "🔔 Actualizaciones") ──
+  // Guarda qué era antes y qué es ahora. Nunca bloquea la acción: si la
+  // tabla cambios_instalacion todavía no existe, solo avisa en la consola.
+  _log(opId, campo, anterior, nuevo, detalle = null) {
+    const a = (anterior === undefined || anterior === null || anterior === '') ? null : String(anterior);
+    const n = (nuevo    === undefined || nuevo    === null || nuevo    === '') ? null : String(nuevo);
+    if (a === n) return;
+    try {
+      DB.addCambio({ op_id: opId, campo, anterior: a, nuevo: n, detalle })
+        .catch(e => console.warn('[Instalacion] registro de cambio:', e.message));
+    } catch (e) { console.warn('[Instalacion] registro de cambio:', e.message); }
+  },
+
+  // Registra los cambios de días / fechas de inicio con el efecto en la fecha de fin estimada.
+  _logSchedule(op, rowBefore, saved, fields) {
+    if (!op || !saved) return;
+    const f = d => this._fmtShort(d);
+    const before = this._scheduleDates(op, rowBefore);
+    const after  = this._scheduleDates(op, saved);
+    const retFin = (dates, row) => {
+      const d = row?.dias_retoques ?? this._DEFAULT_DIAS_RETOQUES;
+      return d > 0 ? this._addBusinessDays(dates.retStart, d) : null;
+    };
+    const retBefore = retFin(before, rowBefore), retAfter = retFin(after, saved);
+    const finTxt = (a, b) => (a && b) ? `fin est. ${f(a)} → ${f(b)}` : (b ? `fin est. ${f(b)}` : null);
+
+    if (fields.dias_estimados !== undefined && (rowBefore?.dias_estimados ?? null) !== saved.dias_estimados) {
+      const prev = rowBefore?.dias_estimados ?? null;
+      this._log(op.id, 'dias_estimados', prev, saved.dias_estimados,
+        prev === null ? `inicio ${f(after.start)} · fin est. ${f(after.finish)}` : finTxt(before.finish, after.finish));
+    }
+    if (fields.dias_retoques !== undefined && (rowBefore?.dias_retoques ?? 0) !== (saved.dias_retoques ?? 0)) {
+      this._log(op.id, 'dias_retoques', rowBefore?.dias_retoques ?? 0, saved.dias_retoques ?? 0,
+        (rowBefore?.dias_retoques ?? 0) === 0 && retAfter ? `inicio ${f(after.retStart)} · fin est. ${f(retAfter)}` : finTxt(retBefore, retAfter));
+    }
+    if (fields.fecha_inicio_plan !== undefined && this._isoDate(before.start) !== this._isoDate(after.start)) {
+      this._log(op.id, 'fecha_inicio_plan', this._isoDate(before.start), this._isoDate(after.start), finTxt(before.finish, after.finish));
+    }
+    if (fields.fecha_inicio_retoques !== undefined && retAfter && this._isoDate(before.retStart) !== this._isoDate(after.retStart)) {
+      this._log(op.id, 'fecha_inicio_retoques', this._isoDate(before.retStart), this._isoDate(after.retStart), finTxt(retBefore, retAfter));
+    }
   },
 
   // ── 📦 Empaque (ready to ship) ───────────────────────────────
@@ -298,8 +344,9 @@ this._ops = [...this._ops, ...backInPintura];
         payload.fecha_inicio_retoques = this._isoDate(cur.retStart); auto.push('fecha_inicio_retoques');
       }
     }
+    let saved;
     try {
-      return await DB.upsertInstalacionOp(payload);
+      saved = await DB.upsertInstalacionOp(payload);
     } catch (e) {
       if (!auto.length) throw e;
       auto.forEach(k => delete payload[k]);
@@ -307,8 +354,10 @@ this._ops = [...this._ops, ...backInPintura];
         this._warnedCols = true;
         alert('Los días se guardaron, pero para que las fechas del cronograma queden fijas falta crear las columnas fecha_inicio_plan y fecha_inicio_retoques en Supabase (SQL pendiente).');
       }
-      return await DB.upsertInstalacionOp(payload);
+      saved = await DB.upsertInstalacionOp(payload);
     }
+    this._logSchedule(op, row, saved, fields);
+    return saved;
   },
 
   _projectedSchedule(projOps) {
@@ -802,12 +851,15 @@ setTimeout(() => win.print(), 400);
     const op = this._ops.find(o => o.id === opId);
     if (!op) return;
     if (kind === 'fin') {
+      const prev = this._installRow(opId)?.fecha_fin || null;
       const saved = await DB.upsertInstalacionOp({ op_id: opId, fecha_fin: iso || null });
       this._upsertLocalInstalacionOp(saved);
+      this._log(opId, 'fecha_fin', prev, iso || null);
     } else {
       const key = kind === 'envio' ? 'envioInstalacion' : 'inicioInstalacion';
       const fieldId = this._fieldIds[key];
       if (!fieldId) throw new Error('No se encontró el campo de fecha en ClickUp');
+      const prev = op[key] ? this._isoDate(op[key]) : null;
       if (iso) {
         const [y, m, d] = iso.split('-').map(Number);
         const date = new Date(y, m - 1, d, 12);   // local noon — avoids shifting a day across time zones
@@ -817,6 +869,7 @@ setTimeout(() => win.print(), 400);
         await PlantaAPI.removeField(opId, fieldId);
         op[key] = null;
       }
+      this._log(opId, kind === 'envio' ? 'fecha_envio' : 'fecha_inicio', prev, iso || null);
       PlantaAPI.clearCache();
     }
     this._draw();
@@ -843,8 +896,10 @@ setTimeout(() => win.print(), 400);
         const opId = sel.dataset.op;
         const pct  = sel.value === '' ? null : parseInt(sel.value, 10);
         try {
+          const prev = this._installRow(opId)?.porcentaje ?? null;
           const saved = await DB.upsertInstalacionOp({ op_id: opId, porcentaje: pct });
           this._upsertLocalInstalacionOp(saved);
+          this._log(opId, 'porcentaje', prev, pct);
           this._draw();
         } catch (e) { alert('Error al guardar el porcentaje: ' + e.message); }
       });
@@ -996,6 +1051,7 @@ setTimeout(() => win.print(), 400);
         try {
           await DB.setAsignacion(opId, 'instalacion', person);
           this._dbData.asignaciones.push({ op_id: opId, etapa: 'instalacion', persona: person, fecha_asignacion: todayIso() });
+          this._log(opId, 'instalador_agregado', null, person);
           await this._mirrorInstalador(opId);
           this._draw();
         } catch (e) { alert('Error: ' + e.message); }
@@ -1008,6 +1064,7 @@ setTimeout(() => win.print(), 400);
         this._dbData.asignaciones = this._dbData.asignaciones.filter(
           a => !(a.op_id === opId && a.etapa === 'instalacion' && a.persona === person));
         DB.removeAsignacion(opId, person, 'instalacion').catch(e => console.warn('[Instalacion] remove:', e.message));
+        this._log(opId, 'instalador_quitado', person, null);
         await this._mirrorInstalador(opId);
         this._draw();
       });
@@ -1021,8 +1078,10 @@ setTimeout(() => win.print(), 400);
         const optId = this._fieldIds.estatusInstalacionOpts?.[normStr(value)];
         if (!optId || !this._fieldIds.estatusInstalacion) return;
         try {
+          const prev = op?.estatusInstalacion || 'SIN COMENZAR';
           await PlantaAPI.setField(opId, this._fieldIds.estatusInstalacion, optId);
           if (op) op.estatusInstalacion = value;
+          this._log(opId, 'estatus_instalacion', prev, value);
           PlantaAPI.clearCache();
           this._draw();
         } catch (e) { alert('Error: ' + e.message); }
@@ -1150,6 +1209,7 @@ setTimeout(() => win.print(), 400);
           const stName = App._data?.completoStatus || 'completo';
           await PlantaAPI.setStatus(opId, stName);
           if (op) { op.status = 'completo'; op.statusRaw = stName; }
+          this._log(opId, 'estado', 'en instalacion', 'completo');
           PlantaAPI.clearCache();
           this._draw();
         } catch (e) {
