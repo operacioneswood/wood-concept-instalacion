@@ -140,8 +140,8 @@ const Novedades = {
       if (!op) return;   // OP que ya no está en la bitácora (proyecto cerrado, etc.)
       ev.push({ ts, op, proj: op.project || '(Sin proyecto)', ...d });
     };
-    (Instalacion._dbData?.bitacoraInstalacion || []).forEach(e => push(new Date(e.created_at), e.op_id, this._describirBitacora(e)));
-    this._cambios.forEach(c => push(new Date(c.created_at), c.op_id, this._describirCambio(c)));
+    (Instalacion._dbData?.bitacoraInstalacion || []).forEach(e => push(new Date(e.created_at), e.op_id, { key: 'b:' + e.id, ...this._describirBitacora(e) }));
+    this._cambios.forEach(c => push(new Date(c.created_at), c.op_id, { key: 'c:' + c.id, ...this._describirCambio(c) }));
     ev.sort((a, b) => a.ts - b.ts);
     return { ev, from, to };
   },
@@ -176,7 +176,7 @@ const Novedades = {
 `;
   },
 
-  _docHtml(data) {
+  _docHtml(data, editable = false) {
     const { ev, from, to } = data;
     const sel = ev.filter(e => !this._excluir.has(e.proj));
     const hoy = new Date();
@@ -221,6 +221,7 @@ const Novedades = {
               <div class="nv-d">${this._fmtFecha(e.ts)}</div>
               <div class="nv-i">${e.icon}</div>
               <div class="nv-t">${opLbl(e)}<br>${esc(e.text)}${e.sub ? `<div class="nv-sub">${esc(e.sub)}</div>` : ''}${e.foto ? `<img class="nv-foto" src="${esc(e.foto)}" alt="Foto">` : ''}</div>
+              ${editable ? `<button class="nv-del" data-del="${esc(e.key)}" title="Quitar del informe">✕</button>` : ''}
             </div>`).join('')}
         </div>`;
     }).join('');
@@ -273,6 +274,8 @@ const Novedades = {
 .nv-projbox label{display:flex;gap:8px;align-items:center;padding:5px 0;cursor:pointer}
 .nv-warn{font-size:13px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:10px}
 #nv-prev{overflow:auto;background:#e9e4dc;padding:12px;border-radius:8px}
+.nv-del{flex:none;align-self:flex-start;background:none;border:0;color:#b5aca0;font-size:14px;cursor:pointer;padding:0 4px;line-height:1}
+.nv-del:hover{color:#b91c1c}
 #nv-prev .nv-sheet{max-width:780px;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.2)}
 ` + this._docCss();
     document.head.appendChild(st);
@@ -323,6 +326,8 @@ const Novedades = {
       }
     });
     ov.addEventListener('click', e => {
+      const del = e.target.closest('[data-del]')?.dataset.del;
+      if (del) { this._quitar(del); return; }
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'close') this.close();
       else if (a === 'print') this._print();
@@ -378,6 +383,27 @@ const Novedades = {
       if (sum) { const n = nombres.filter(p => !this._excluir.has(p)).length; sum.innerHTML = `Proyectos: <b>${n === nombres.length ? 'todos' : n + ' de ' + nombres.length}</b> (${nombres.length} con actividad)`; }
     }
     const prev = document.getElementById('nv-prev');
-    if (prev) prev.innerHTML = this._docHtml(data);
+    if (prev) prev.innerHTML = this._docHtml(data, true);
+  },
+
+  // Quita una actualización del informe: un cambio registrado se borra del
+  // registro (el cambio en sí no se deshace); una nota de la bitácora se borra de la bitácora.
+  async _quitar(key) {
+    const [tipo, id] = [key.slice(0, 1), key.slice(2)];
+    try {
+      if (tipo === 'c') {
+        if (!confirm('¿Quitar este cambio del informe?\n\nSolo se borra del registro de actualizaciones: el cambio en sí (los días, la fecha, etc.) no se deshace.')) return;
+        await DB.deleteCambio(id);
+        this._cambios = this._cambios.filter(c => c.id !== id);
+      } else {
+        if (!confirm('Esta actualización es una nota de la bitácora de la OP.\n\n¿Borrarla? Desaparece también de la bitácora de la OP y no se puede deshacer.')) return;
+        const entry = (Instalacion._dbData?.bitacoraInstalacion || []).find(e => e.id === id);
+        await DB.deleteBitacoraEntry(id);
+        if (entry?.foto_url) await DB.deleteFotoByUrl(entry.foto_url);
+        Instalacion._dbData.bitacoraInstalacion = Instalacion._dbData.bitacoraInstalacion.filter(e => e.id !== id);
+        Instalacion._draw();
+      }
+      this._refresh();
+    } catch (e) { alert('No se pudo quitar: ' + (e.message || e)); }
   },
 };
