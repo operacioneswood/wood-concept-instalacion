@@ -155,6 +155,11 @@ const DB = {
     return this._q(sb => sb.from('cambios_instalacion').insert({ op_id, campo, anterior, nuevo, detalle }));
   },
 
+  async deleteCambio(id) {
+    const { error } = await this._sb.from('cambios_instalacion').delete().eq('id', id);
+    if (error) throw error;
+  },
+
   // ════════════════════════════════════════════════════════
   // ACTAS_ENTREGA  (Acta de Entrega Final por proyecto, con firmas en
   // pantalla guardadas como PNG)
