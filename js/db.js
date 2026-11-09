@@ -142,6 +142,20 @@ const DB = {
   },
 
   // ════════════════════════════════════════════════════════
+  // CAMBIOS_INSTALACION  (registro de cambios de días, fechas, avance,
+  // instaladores, estatus y OPs completadas: alimenta el informe
+  // "🔔 Actualizaciones")
+  // ════════════════════════════════════════════════════════
+  async getCambios(desdeIso) {
+    return this._q(sb => sb.from('cambios_instalacion').select('*')
+      .gte('created_at', desdeIso).order('created_at', { ascending: true }).limit(5000));
+  },
+
+  async addCambio({ op_id, campo, anterior = null, nuevo = null, detalle = null }) {
+    return this._q(sb => sb.from('cambios_instalacion').insert({ op_id, campo, anterior, nuevo, detalle }));
+  },
+
+  // ════════════════════════════════════════════════════════
   // ACTAS_ENTREGA  (Acta de Entrega Final por proyecto, con firmas en
   // pantalla guardadas como PNG)
   // ════════════════════════════════════════════════════════
@@ -228,6 +242,22 @@ const DB = {
       created_at          timestamptz not null default now(),
       updated_at          timestamptz not null default now()
     );
+
+    create table if not exists cambios_instalacion (
+      id          uuid primary key default gen_random_uuid(),
+      op_id       text not null,
+      campo       text not null,
+      anterior    text,
+      nuevo       text,
+      detalle     text,
+      created_at  timestamptz not null default now()
+    );
+    create index if not exists cambios_instalacion_fecha_idx on cambios_instalacion (created_at desc);
+
+    alter table cambios_instalacion enable row level security;
+    drop policy if exists "cambios_instalacion acceso publico" on cambios_instalacion;
+    create policy "cambios_instalacion acceso publico" on cambios_instalacion
+      for all to anon, authenticated using (true) with check (true);
 
     alter table actas_entrega enable row level security;
     drop policy if exists "actas_entrega acceso publico" on actas_entrega;
