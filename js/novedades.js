@@ -17,7 +17,6 @@ const Novedades = {
   _excluir:  new Set(),      // proyectos que se quitan del informe
   _cambios:  [],
   _cambiosErr: null,
-  _cargado:  null,           // desde qué fecha se cargaron los cambios
   _LS:       'wi_novedades_ultima',
   _MESES:    ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'],
 
@@ -57,19 +56,46 @@ const Novedades = {
     return { from, to };
   },
 
+  // Siempre se piden a la base: así un cambio hecho después de abrir el informe por primera vez también aparece.
   async _cargarCambios() {
     const { from } = this._range();
-    // Se piden siempre con un margen de 90 días para no volver a consultar al cambiar de periodo.
-    const base = new Date(Math.min(from.getTime(), Date.now() - 90 * 86400000));
-    if (this._cargado && base >= this._cargado && !this._cambiosErr) return;
     try {
-      this._cambios = await DB.getCambios(base.toISOString());
+      this._cambios = await DB.getCambios(from.toISOString());
       this._cambiosErr = null;
-      this._cargado = base;
     } catch (e) {
       this._cambios = [];
       this._cambiosErr = e.message || String(e);
     }
+  },
+
+  // Une las ediciones seguidas del mismo campo de una OP en el mismo día
+  // (p. ej. retoques 0→1, 0→2, 2→3 pasan a "0 → 3"). Si el resultado es el
+  // mismo valor del inicio, no se muestra. Instaladores no se unen.
+  _mergeCambios(lista) {
+    const UNIBLES = new Set(['dias_estimados', 'dias_retoques', 'fecha_inicio_plan', 'fecha_inicio_retoques', 'porcentaje', 'estatus_instalacion', 'fecha_envio', 'fecha_inicio', 'fecha_fin']);
+    const dia = c => { const d = new Date(c.created_at); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+    const finDesde = d => { const m = d && d.match(/fin est\. (.+?) → /); return m ? m[1] : null; };
+    const finHasta = d => { if (!d) return null; let m = d.match(/fin est\. .+? → (.+)$/); if (m) return m[1]; m = d.match(/fin est\. (.+)$/); return m ? m[1] : null; };
+    const inicioDe = d => { const m = d && d.match(/^(inicio [^·]+?) · /); return m ? m[1] : null; };
+    const grupos = new Map();
+    const salida = [];
+    lista.forEach(c => {
+      if (!UNIBLES.has(c.campo)) { salida.push({ ...c, ids: [c.id] }); return; }
+      const k = `${c.op_id}|${c.campo}|${dia(c)}`;
+      if (!grupos.has(k)) grupos.set(k, []);
+      grupos.get(k).push(c);
+    });
+    grupos.forEach(g => {
+      const primero = g[0], ultimo = g[g.length - 1];
+      if (g.length === 1) { salida.push({ ...ultimo, ids: [ultimo.id] }); return; }
+      if ((primero.anterior ?? null) === (ultimo.nuevo ?? null)) return;   // quedó igual que al inicio
+      let detalle = null;
+      const ini = inicioDe(primero.detalle), hasta = finHasta(ultimo.detalle);
+      if (ini && hasta) detalle = `${ini} · fin est. ${hasta}`;
+      else if (finDesde(primero.detalle) && hasta) detalle = `fin est. ${finDesde(primero.detalle)} → ${hasta}`;
+      salida.push({ ...ultimo, anterior: primero.anterior, detalle, ids: g.map(x => x.id) });
+    });
+    return salida.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
   },
 
   // ── Eventos ──────────────────────────────────────────────────
@@ -141,7 +167,7 @@ const Novedades = {
       ev.push({ ts, op, proj: op.project || '(Sin proyecto)', ...d });
     };
     (Instalacion._dbData?.bitacoraInstalacion || []).forEach(e => push(new Date(e.created_at), e.op_id, { key: 'b:' + e.id, ...this._describirBitacora(e) }));
-    this._cambios.forEach(c => push(new Date(c.created_at), c.op_id, { key: 'c:' + c.id, ...this._describirCambio(c) }));
+    this._mergeCambios(this._cambios).forEach(c => push(new Date(c.created_at), c.op_id, { key: 'c:' + c.ids.join(','), ...this._describirCambio(c) }));
     ev.sort((a, b) => a.ts - b.ts);
     return { ev, from, to };
   },
@@ -393,8 +419,9 @@ const Novedades = {
     try {
       if (tipo === 'c') {
         if (!confirm('¿Quitar este cambio del informe?\n\nSolo se borra del registro de actualizaciones: el cambio en sí (los días, la fecha, etc.) no se deshace.')) return;
-        await DB.deleteCambio(id);
-        this._cambios = this._cambios.filter(c => c.id !== id);
+        const ids = id.split(',');   // un renglón puede juntar varias ediciones seguidas
+        for (const x of ids) await DB.deleteCambio(x);
+        this._cambios = this._cambios.filter(c => !ids.includes(c.id));
       } else {
         if (!confirm('Esta actualización es una nota de la bitácora de la OP.\n\n¿Borrarla? Desaparece también de la bitácora de la OP y no se puede deshacer.')) return;
         const entry = (Instalacion._dbData?.bitacoraInstalacion || []).find(e => e.id === id);
