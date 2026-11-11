@@ -26,6 +26,7 @@ const Instalacion = {
   _DEFAULT_DIAS_RETOQUES: 0,       // 0 = sin etapa de retoques en el cronograma, por defecto
 
   render({ installOps, ops, fieldIds, dbData }) {
+    Reprocesos.refresh();   // mantiene al día el contador de reprocesos abiertos
     this._ops          = installOps || [];
     this._fieldIds      = fieldIds || {};
     // The dropdown is built from Supabase (dbData.instaladores), not
@@ -97,12 +98,14 @@ this._ops = [...this._ops, ...backInPintura];
         <div class="cron-subtabs">
           <button class="cron-subtab ${this._sub === 'empaque' ? 'active' : ''}" data-sub="empaque">📦 Empaque (${this._ops.filter(o => o.status === 'empaque').length})</button>
           <button class="cron-subtab ${this._sub === 'instalacion' ? 'active' : ''}" data-sub="instalacion">🔧 En Instalación (${this._ops.filter(o => o.status === 'en instalacion').length})</button>
+          <button class="cron-subtab ${this._sub === 'reprocesos' ? 'active' : ''}" data-sub="reprocesos">⚠ Reprocesos (<span data-repro-count>${Reprocesos.openCount()}</span>)</button>
           <button class="cron-subtab ${this._sub === 'rendimiento' ? 'active' : ''}" data-sub="rendimiento">📊 Rendimiento</button>
           <button class="btn-primary btn-sm inst-nov-btn" style="margin-left:auto;align-self:center" title="Resumen de las actualizaciones más recientes de los proyectos">🔔 Actualizaciones</button>
         </div>
         <div class="cron-body" id="inst-body">
           ${this._sub === 'empaque' ? this._renderEmpaque()
             : this._sub === 'rendimiento' ? this._renderRendimiento()
+            : this._sub === 'reprocesos' ? '<div id="repro-wrap"></div>'
             : this._renderEnInstalacion()}
         </div>
       </div>
@@ -113,6 +116,7 @@ this._ops = [...this._ops, ...backInPintura];
     });
 
     wrap.querySelector('.inst-nov-btn')?.addEventListener('click', () => Novedades.open());
+    if (this._sub === 'reprocesos') Reprocesos.mount(el('repro-wrap'), { ops: [...this._ops, ...(App._data?.ops || [])] });
 
     this._bindEmpaque(wrap);
     this._bindInstalacion(wrap);
