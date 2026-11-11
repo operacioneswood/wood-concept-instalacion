@@ -31,6 +31,7 @@ const Novedades = {
   },
 
   close() {
+    document.getElementById('nv-lightbox')?.remove();
     document.getElementById('nv-overlay')?.remove();
     document.body.style.overflow = '';
   },
@@ -294,6 +295,11 @@ const Novedades = {
 .nv-projbox label{display:flex;gap:8px;align-items:center;padding:5px 0;cursor:pointer}
 .nv-warn{font-size:13px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:10px}
 #nv-prev{overflow:auto;background:#e9e4dc;padding:12px;border-radius:8px}
+#nv-prev .nv-foto{cursor:zoom-in}
+.nv-lb{position:fixed;inset:0;z-index:9500;background:rgba(10,8,6,.9);display:flex;align-items:center;justify-content:center;cursor:zoom-out}
+.nv-lb img{max-width:94vw;max-height:88vh;object-fit:contain;border-radius:4px;box-shadow:0 4px 30px rgba(0,0,0,.6)}
+.nv-lb-x{position:absolute;top:10px;right:14px;background:none;border:0;color:#fff;font-size:30px;cursor:pointer;line-height:1}
+.nv-lb-a{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:#ddd;font-size:13px;text-decoration:underline}
 .nv-del{flex:none;align-self:flex-start;background:none;border:0;color:#b5aca0;font-size:14px;cursor:pointer;padding:0 4px;line-height:1}
 .nv-del:hover{color:#b91c1c}
 #nv-prev .nv-sheet{max-width:780px;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.2)}
@@ -346,6 +352,7 @@ const Novedades = {
       }
     });
     ov.addEventListener('click', e => {
+      if (e.target.classList?.contains('nv-foto')) { this._verFoto(e.target.src); return; }
       const del = e.target.closest('[data-del]')?.dataset.del;
       if (del) { this._quitar(del); return; }
       const a = e.target.closest('[data-a]')?.dataset.a;
@@ -404,6 +411,23 @@ const Novedades = {
     }
     const prev = document.getElementById('nv-prev');
     if (prev) prev.innerHTML = this._docHtml(data, true);
+  },
+
+  // Visor de fotos: se abre al hacer clic en una foto de la vista previa.
+  _verFoto(src) {
+    document.getElementById('nv-lightbox')?.remove();
+    const lb = document.createElement('div');
+    lb.className = 'nv-lb';
+    lb.id = 'nv-lightbox';
+    lb.innerHTML = `<button class="nv-lb-x" title="Cerrar">✕</button><img src="${esc(src)}" alt="Foto"><a class="nv-lb-a" href="${esc(src)}" target="_blank" rel="noopener">Abrir original en otra pestaña</a>`;
+    const cerrar = () => { lb.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = e => {
+      if (!lb.isConnected) { document.removeEventListener('keydown', onKey, true); return; }
+      if (e.key === 'Escape') { e.stopPropagation(); cerrar(); }
+    };
+    lb.addEventListener('click', e => { if (!e.target.closest('.nv-lb-a')) cerrar(); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(lb);
   },
 
   // Quita una actualización del informe: un cambio registrado se borra del
