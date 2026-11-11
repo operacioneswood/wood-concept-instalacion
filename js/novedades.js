@@ -187,7 +187,6 @@ const Novedades = {
 .nv-li{padding:4px 0;border-bottom:.5pt solid #eee;break-inside:avoid}
 .nv-li small{color:#666}
 .nv-vacio{color:#888;font-style:italic;padding:14px 0}
-.nv-detalle{break-before:page}
 .nv-proj{margin:0 0 16px}
 .nv-proj-h{background:#1a1714;color:#fff;padding:7px 12px;font-weight:700;font-size:10pt;letter-spacing:.05em;text-transform:uppercase;display:flex;justify-content:space-between;gap:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact;break-after:avoid}
 .nv-proj-h span{font-weight:500;font-size:8.5pt;opacity:.8;text-transform:none;letter-spacing:0}
@@ -215,15 +214,13 @@ const Novedades = {
     const cron      = por('cronograma');
     const reprocesos = por('reproceso'), pausas = por('pausa');
     const notas     = por('nota');
-    const proyectos = [...new Set(sel.map(e => e.proj))].sort((a, b) => a.localeCompare(b));
+    // Lo más reciente arriba: los proyectos con movimiento más nuevo primero y, dentro de cada uno, la actualización más nueva primero.
+    const ultimo = {};
+    sel.forEach(e => { if (!ultimo[e.proj] || e.ts > ultimo[e.proj]) ultimo[e.proj] = e.ts; });
+    const proyectos = Object.keys(ultimo).sort((a, b) => ultimo[b] - ultimo[a]);
     const ops       = new Set(sel.map(e => e.op.id));
 
     const tile = (n, l) => `<div class="nv-tile"><b>${n}</b><span>${l}</span></div>`;
-    const lista = (arr, fmt) => arr.length
-      ? arr.map(e => `<div class="nv-li">${fmt(e)}</div>`).join('')
-      : '';
-    const seccion = (titulo, arr, fmt) => arr.length ? `<div class="nv-h2">${titulo}</div>${lista(arr, fmt)}` : '';
-
     const resumen = `
       <div class="nv-tiles">
         ${tile(proyectos.length, 'Proyectos con actividad')}
@@ -232,13 +229,10 @@ const Novedades = {
         ${tile(reprocesos.length + pausas.length, 'Reprocesos / pausas')}
         ${tile(notas.length, 'Comentarios')}
       </div>
-      ${seccion('✔ Completadas', completas, e => `${opLbl(e)} <small>— ${esc(e.proj)} · ${this._fmtFecha(e.ts)}</small>`)}
-      ${seccion('📅 Cronogramas que se movieron', cron, e => `${opLbl(e)} <small>— ${esc(e.proj)}</small><br>${esc(e.text)}${e.sub ? ` <small>(${esc(e.sub)})</small>` : ''}`)}
-      ${seccion('⚠ Reprocesos y pausas', [...reprocesos, ...pausas].sort((a, b) => a.ts - b.ts), e => `${opLbl(e)} <small>— ${esc(e.proj)} · ${this._fmtFecha(e.ts)}</small><br>${esc(e.text)}`)}
     `;
 
     const bloques = proyectos.map(p => {
-      const items = sel.filter(e => e.proj === p);
+      const items = sel.filter(e => e.proj === p).sort((a, b) => b.ts - a.ts);
       return `
         <div class="nv-proj">
           <div class="nv-proj-h">${esc(p)}<span>${items.length} ${items.length !== 1 ? 'actualizaciones' : 'actualización'}</span></div>
@@ -259,7 +253,7 @@ const Novedades = {
     <div class="nv-per">${per}<br>Generado el ${f(hoy)}</div>
   </div>
   ${sel.length ? resumen : '<div class="nv-vacio">No hay actualizaciones registradas en este periodo.</div>'}
-  ${sel.length ? `<div class="nv-detalle"><div class="nv-h2" style="margin-top:0">Detalle por proyecto · ${ops.size} OP${ops.size !== 1 ? 's' : ''} con movimiento</div>${bloques}</div>` : ''}
+  ${sel.length ? `<div class="nv-detalle"><div class="nv-h2">Detalle por proyecto · ${ops.size} OP${ops.size !== 1 ? 's' : ''} con movimiento</div>${bloques}</div>` : ''}
   <div class="nv-foot">Wood Concept · Instalación</div>
 </div>`;
   },
