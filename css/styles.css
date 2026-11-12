@@ -1961,6 +1961,23 @@ body.has-pending-shift .app-body { padding-top: 0; }
   .cron-tbl td:empty, .ranking-table td:empty { display: none; }
   .cron-tbl td:has(button) { justify-content: center; padding-top: 6px; }
   .cron-name { max-width: none; }
+
+  /* Pestañas (Empaque / En Instalación / Reprocesos / Rendimiento) + botón Actualizaciones:
+     antes iban en una sola fila y se salían de la pantalla (~610px). Ahora se acomodan en filas. */
+  .cron-subtabs {
+    flex-wrap: wrap;
+    padding: 0 6px;
+    position: static;
+  }
+  .cron-subtab,
+  .tablet .cron-subtab {
+    flex: 1 1 auto;
+    padding: 10px 8px;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    text-align: center;
+  }
+  .cron-subtabs .inst-nov-btn { flex: 1 1 100%; margin: 6px 0 8px !important; }
 }
 
 /* Avance (%) por OP */
