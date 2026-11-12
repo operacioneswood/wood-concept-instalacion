@@ -835,6 +835,17 @@ setTimeout(() => win.print(), 400);
     `;
   },
 
+  // La pregunta "OP" del formulario de reprocesos es una lista desplegable: solo acepta la
+  // opción EXACTA, con el mismo formato que arma el script "Lista de OPs":
+  //   "26058-04 · NOMBRE DE LA OP (PROYECTO)"
+  _etiquetaForm(op) {
+    if (!op || !op.noOp) return '';
+    const nombre = (op.name || '').trim(), proy = (op.project || '').trim();
+    let e = String(op.noOp).trim() + ' · ' + nombre + (proy ? ' (' + proy + ')' : '');
+    if (e.length > 250) e = e.slice(0, 247) + '...';
+    return e;
+  },
+
   _tipoIcon(tipo) {
     return { nota: '📝', inicio: '▶', pausa: '⏸', reanudado: '▶', cambio_sitio: '🔁', reproceso: '⚠', fin: '✔' }[tipo] || '📝';
   },
@@ -1127,7 +1138,7 @@ setTimeout(() => win.print(), 400);
         const op = this._ops.find(o => o.id === opId);
         const url = buildReprocesoFormUrl({
           cliente: op?.project || '',
-          op:      op?.noOp || '',
+          op:      this._etiquetaForm(op) || op?.noOp || '',
           motivo:  this._draftTexto[opId] || '',
         });
         window.open(url, '_blank');
