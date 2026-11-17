@@ -40,7 +40,9 @@ const Instalacion = {
 const instIds = new Set([...(dbData?.asignaciones || []).filter(a => a.etapa === 'instalacion').map(a => a.op_id), ...(dbData?.bitacoraInstalacion || []).map(e => e.op_id), ...(dbData?.instalacionOps || []).map(r => r.op_id)]);
 const haveIds = new Set(this._ops.map(o => o.id));
 const backInPintura = (ops || []).filter(o => o.status === 'en pintura' && !haveIds.has(o.id) && (instIds.has(o.id) || (o.estatusInstalacion && normStr(o.estatusInstalacion) !== 'sin comenzar'))).map(o => ({ ...o, status: 'en instalacion', enPintura: true }));
-this._ops = [...this._ops, ...backInPintura];
+// OPs con estado "reproceso" en ClickUp también se muestran en "En Instalación", marcadas como reproceso.
+const enReproceso = (ops || []).filter(o => o.status === 'reproceso' && !haveIds.has(o.id)).map(o => ({ ...o, status: 'en instalacion', enReproceso: true }));
+this._ops = [...this._ops, ...backInPintura, ...enReproceso];
     this._draw();
   },
 
@@ -688,6 +690,7 @@ setTimeout(() => win.print(), 400);
               <span class="inst-pct-bar"><span style="width:${row.porcentaje}%"></span></span>${row.porcentaje}%
             </span>` : ''}
           ${installers.length ? `<span class="inst-installer-tag">👷 ${esc(installers.join(', '))}</span>` : '<span class="cron-faint">Sin instalador</span>'}
+          ${op.enReproceso ? '<span class="badge-reproceso-sm" title="Estado en ClickUp: Reproceso">Reproceso</span>' : ''}
           ${completa === false ? '<span class="badge-reproceso-sm">Incompleta</span>' : ''}
         </div>
         ${expanded ? this._opDetailHtml(op, installers, row, estatus) : ''}
