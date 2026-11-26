@@ -15,6 +15,7 @@ const Novedades = {
   _desde:    '',
   _hasta:    '',
   _excluir:  new Set(),      // proyectos que se quitan del informe
+  _abiertas: new Set(),      // OPs con la lista de cambios desplegada completa (solo en pantalla; al imprimir siempre salen todos)
   _cambios:  [],
   _cambiosErr: null,
   _LS:       'wi_novedades_ultima',
@@ -24,6 +25,7 @@ const Novedades = {
   open() {
     this._ensureCss();
     this._excluir = new Set();
+    this._abiertas = new Set();
     this._periodo = this._ultimaImpresion() ? 'ultima' : '7';
     this._desde = this._hasta = '';
     this._build();
@@ -108,35 +110,44 @@ const Novedades = {
     return v;
   },
 
-  // Convierte un registro de cambios en texto entendible.
+  _tiene(v) { return v !== null && v !== undefined && v !== ''; },
+
+  _dias(v) { const n = Number(v); return `${v} día${n === 1 ? '' : 's'}`; },
+
+  // Convierte un registro de cambios en algo entendible: una etiqueta ("Estatus"), el valor de ANTES (solo si
+  // existía: si no, queda null y no se muestra) y el valor de DESPUÉS.
   _describirCambio(c) {
-    const a = this._fmtVal(c.anterior), n = this._fmtVal(c.nuevo);
+    const T = v => this._tiene(v);
+    const a = T(c.anterior) ? this._fmtVal(c.anterior) : null;
+    const n = T(c.nuevo) ? this._fmtVal(c.nuevo) : '—';
     const det = c.detalle || null;
+    const mk = (kind, icon, etiqueta, antes, despues) => ({
+      kind, icon, etiqueta, antes, despues, sub: det,
+      text: `${etiqueta}: ${antes ? antes + ' → ' : ''}${despues}`,
+    });
     switch (c.campo) {
       case 'dias_estimados':
-        return c.anterior === null
-          ? { kind: 'cronograma', icon: '📅', text: `Cronograma definido: ${n} día(s) de instalación`, sub: det }
-          : { kind: 'cronograma', icon: '📅', text: `Días de instalación: ${a} → ${n}`, sub: det };
+        return mk('cronograma', '📅', 'Días de instalación', T(c.anterior) ? this._dias(c.anterior) : null, T(c.nuevo) ? this._dias(c.nuevo) : '—');
       case 'dias_retoques':
-        return { kind: 'cronograma', icon: '📅', text: `Días de retoques: ${a} → ${n}`, sub: det };
+        return mk('cronograma', '📅', 'Días de retoques', T(c.anterior) ? this._dias(c.anterior) : null, T(c.nuevo) ? this._dias(c.nuevo) : '—');
       case 'fecha_inicio_plan':
-        return { kind: 'cronograma', icon: '📅', text: `Inicio del cronograma: ${a} → ${n}`, sub: det };
+        return mk('cronograma', '📅', 'Inicio del cronograma', a, n);
       case 'fecha_inicio_retoques':
-        return { kind: 'cronograma', icon: '📅', text: `Inicio de retoques: ${a} → ${n}`, sub: det };
-      case 'fecha_envio':   return { kind: 'fecha', icon: '🚚', text: `Envío a sitio: ${a} → ${n}`, sub: det };
-      case 'fecha_inicio':  return { kind: 'fecha', icon: '▶',  text: `Inicio de instalación: ${a} → ${n}`, sub: det };
-      case 'fecha_fin':     return { kind: 'fecha', icon: '🏁', text: `Fin de instalación: ${a} → ${n}`, sub: det };
-      case 'porcentaje':    return { kind: 'avance', icon: '📊', text: `Avance: ${c.anterior === null ? '—' : c.anterior + '%'} → ${c.nuevo === null ? '—' : c.nuevo + '%'}`, sub: det };
+        return mk('cronograma', '📅', 'Inicio de retoques', a, n);
+      case 'fecha_envio':   return mk('fecha', '🚚', 'Envío a sitio', a, n);
+      case 'fecha_inicio':  return mk('fecha', '▶',  'Inicio de instalación', a, n);
+      case 'fecha_fin':     return mk('fecha', '🏁', 'Fin de instalación', a, n);
+      case 'porcentaje':    return mk('avance', '📊', 'Avance', T(c.anterior) ? c.anterior + '%' : null, T(c.nuevo) ? c.nuevo + '%' : '—');
       case 'estatus_instalacion':
-        return { kind: 'estatus', icon: '📊', text: `Estatus de instalación: ${a} → ${n}`, sub: det };
+        return mk('estatus', '📊', 'Estatus', a, n);
       case 'instalador_agregado':
-        return { kind: 'instalador', icon: '👷', text: `Instalador asignado: ${n}`, sub: det };
+        return mk('instalador', '👷', 'Instalador asignado', null, n);
       case 'instalador_quitado':
-        return { kind: 'instalador', icon: '👷', text: `Instalador retirado: ${a}`, sub: det };
+        return mk('instalador', '👷', 'Instalador retirado', null, T(c.anterior) ? this._fmtVal(c.anterior) : '—');
       case 'estado':
-        return { kind: 'completa', icon: '✔', text: 'OP completada', sub: det };
+        return mk('completa', '✔', 'Estado', null, 'OP completada');
       default:
-        return { kind: 'otro', icon: '•', text: `${c.campo}: ${a} → ${n}`, sub: det };
+        return mk('otro', '•', String(c.campo), a, n);
     }
   },
 
@@ -167,8 +178,8 @@ const Novedades = {
       if (!op) return;   // OP que ya no está en la bitácora (proyecto cerrado, etc.)
       ev.push({ ts, op, proj: op.project || '(Sin proyecto)', ...d });
     };
-    (Instalacion._dbData?.bitacoraInstalacion || []).forEach(e => push(new Date(e.created_at), e.op_id, { key: 'b:' + e.id, ...this._describirBitacora(e) }));
-    this._mergeCambios(this._cambios).forEach(c => push(new Date(c.created_at), c.op_id, { key: 'c:' + c.ids.join(','), ...this._describirCambio(c) }));
+    (Instalacion._dbData?.bitacoraInstalacion || []).forEach(e => push(new Date(e.created_at), e.op_id, { key: 'b:' + e.id, grupo: 'nota', ...this._describirBitacora(e) }));
+    this._mergeCambios(this._cambios).forEach(c => push(new Date(c.created_at), c.op_id, { key: 'c:' + c.ids.join(','), grupo: 'cambio', ...this._describirCambio(c) }));
     ev.sort((a, b) => a.ts - b.ts);
     return { ev, from, to };
   },
@@ -199,7 +210,96 @@ const Novedades = {
 .nv-sub{color:#555;font-size:9pt}
 .nv-foto{display:block;margin-top:4px;max-width:220px;max-height:160px;border:.5pt solid #bbb}
 .nv-foot{margin-top:14px;font-size:8pt;color:#999;text-align:right}
+.nv-op{border:1px solid #d8d2cb;border-top:none;padding:9px 12px;background:#fff;break-inside:avoid}
+.nv-op-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.nv-op-n{font-size:10.5pt}
+.nv-op-n b{color:#8B1A1A}
+.nv-chip{font-size:8pt;background:#f1ede7;color:#555;padding:1px 8px;border-radius:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.nv-now{font-size:8.5pt;color:#666;margin:2px 0 7px}
+.nv-com{display:flex;gap:8px;background:#f5f2ed;border-radius:6px;padding:6px 10px;margin:0 0 6px;break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.nv-com-b{flex:1;min-width:0}
+.nv-com-h{font-size:8pt;color:#777}
+.nv-com-t{font-size:9.5pt;line-height:1.45;white-space:pre-wrap}
+.nv-tab{width:100%;border-collapse:collapse;font-size:9pt;margin-top:2px}
+.nv-tab th{font-weight:400;font-size:8pt;color:#888;text-align:left;padding:2px 4px}
+.nv-tab td{padding:4px 4px;border-top:.5pt solid #e5e0da;vertical-align:top}
+.nv-tab tr{break-inside:avoid}
+.nv-tf{width:46px;color:#666;white-space:nowrap}
+.nv-tc{width:34%}
+.nv-tx{width:22px;text-align:right}
+.nv-antes{color:#888}
+.nv-flecha{color:#aaa;margin:0 5px}
+.nv-val{font-weight:600;color:#111}
+.nv-mas{background:none;border:0;color:#8B1A1A;font-size:9pt;cursor:pointer;padding:6px 0 0;text-decoration:underline}
+.nv-plegada .nv-extra{display:none}
+@media print{.nv-mas{display:none}}
 `;
+  },
+
+  // Cómo está la OP ahora (estatus, avance e instaladores), para la línea "Ahora:" de cada tarjeta.
+  _ahora(op) {
+    const partes = [];
+    const est = String(op.estatusInstalacion || '').trim();
+    if (est) partes.push(est.toLowerCase());
+    const fila = Instalacion._installRow ? Instalacion._installRow(op.id) : null;
+    if (fila && this._tiene(fila.porcentaje)) partes.push(fila.porcentaje + '%');
+    const inst = Instalacion._instaladoresFor ? Instalacion._instaladoresFor(op.id) : [];
+    if (inst.length) partes.push((inst.length > 1 ? 'instaladores ' : 'instalador ') + inst.join(', '));
+    return partes.join(' · ');
+  },
+
+  // "Antes → Después" si había un antes; solo el valor nuevo si no lo había.
+  _valorHtml(e) {
+    if (e.despues === undefined) return esc(e.text || '');
+    return this._tiene(e.antes)
+      ? `<span class="nv-antes">${esc(e.antes)}</span><span class="nv-flecha">→</span><b class="nv-val">${esc(e.despues)}</b>`
+      : `<b class="nv-val">${esc(e.despues)}</b>`;
+  },
+
+  // Una tarjeta por OP: título una sola vez, sus comentarios y una tabla con todos sus cambios.
+  // En pantalla, si hay más de 4 cambios se ven los 4 más recientes y un "Ver los N cambios anteriores";
+  // al imprimir siempre salen todos.
+  _opCardHtml(list, editable) {
+    const MAX = 4;
+    const op = list[0].op;
+    const notas   = list.filter(e => e.grupo === 'nota').sort((a, b) => b.ts - a.ts);
+    const cambios = list.filter(e => e.grupo !== 'nota').sort((a, b) => b.ts - a.ts);
+    const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+    const resumen = [cambios.length ? plural(cambios.length, 'cambio', 'cambios') : '', notas.length ? plural(notas.length, 'comentario', 'comentarios') : ''].filter(Boolean).join(' · ');
+    const ahora = this._ahora(op);
+    const del = e => editable ? `<button class="nv-del" data-del="${esc(e.key)}" title="Quitar del informe">✕</button>` : '';
+
+    const coms = notas.map(e => `
+        <div class="nv-com">
+          <div class="nv-com-b">
+            <div class="nv-com-h">${e.icon} ${this._fmtFecha(e.ts)}</div>
+            <div class="nv-com-t">${esc(e.text)}</div>
+            ${e.foto ? `<img class="nv-foto" src="${esc(e.foto)}" alt="Foto">` : ''}
+          </div>
+          ${del(e)}
+        </div>`).join('');
+
+    const plegable = editable && cambios.length > MAX;
+    const abierta = this._abiertas.has(op.id);
+    const filas = cambios.map((e, i) => `
+          <tr${plegable && i >= MAX ? ' class="nv-extra"' : ''}>
+            <td class="nv-tf">${this._fmtFecha(e.ts)}</td>
+            <td class="nv-tc">${e.icon} ${esc(e.etiqueta || e.text)}</td>
+            <td class="nv-tv">${this._valorHtml(e)}${e.sub ? `<div class="nv-sub">${esc(e.sub)}</div>` : ''}</td>
+            ${editable ? `<td class="nv-tx">${del(e)}</td>` : ''}
+          </tr>`).join('');
+    const tabla = cambios.length
+      ? `<table class="nv-tab"><thead><tr><th>Fecha</th><th>Cambio</th><th>Detalle</th>${editable ? '<th></th>' : ''}</tr></thead><tbody>${filas}</tbody></table>`
+      : '';
+    const mas = plegable
+      ? `<button class="nv-mas" data-a="mas" data-op="${esc(op.id)}">${abierta ? 'Ocultar los cambios anteriores' : `Ver los ${cambios.length - MAX} cambios anteriores`}</button>`
+      : '';
+    return `
+      <div class="nv-op${plegable && !abierta ? ' nv-plegada' : ''}">
+        <div class="nv-op-h"><div class="nv-op-n"><b>${esc(op.noOp || '—')}</b> · ${esc(op.name)}</div><span class="nv-chip">${resumen}</span></div>
+        ${ahora ? `<div class="nv-now">Ahora: ${esc(ahora)}</div>` : ''}
+        ${coms}${tabla}${mas}
+      </div>`;
   },
 
   _docHtml(data, editable = false) {
@@ -232,18 +332,17 @@ const Novedades = {
       </div>
     `;
 
+    // Por proyecto → una tarjeta por OP (la de movimiento más reciente primero), con todos sus cambios dentro.
     const bloques = proyectos.map(p => {
-      const items = sel.filter(e => e.proj === p).sort((a, b) => b.ts - a.ts);
+      const delProyecto = sel.filter(e => e.proj === p);
+      const porOp = new Map();
+      delProyecto.forEach(e => { if (!porOp.has(e.op.id)) porOp.set(e.op.id, []); porOp.get(e.op.id).push(e); });
+      const tarjetas = [...porOp.values()]
+        .sort((a, b) => Math.max(...b.map(x => x.ts)) - Math.max(...a.map(x => x.ts)));
       return `
         <div class="nv-proj">
-          <div class="nv-proj-h">${esc(p)}<span>${items.length} ${items.length !== 1 ? 'actualizaciones' : 'actualización'}</span></div>
-          ${items.map(e => `
-            <div class="nv-row">
-              <div class="nv-d">${this._fmtFecha(e.ts)}</div>
-              <div class="nv-i">${e.icon}</div>
-              <div class="nv-t">${opLbl(e)}<br>${esc(e.text)}${e.sub ? `<div class="nv-sub">${esc(e.sub)}</div>` : ''}${e.foto ? `<img class="nv-foto" src="${esc(e.foto)}" alt="Foto">` : ''}</div>
-              ${editable ? `<button class="nv-del" data-del="${esc(e.key)}" title="Quitar del informe">✕</button>` : ''}
-            </div>`).join('')}
+          <div class="nv-proj-h">${esc(p)}<span>${tarjetas.length} OP${tarjetas.length !== 1 ? 's' : ''} · ${delProyecto.length} ${delProyecto.length !== 1 ? 'actualizaciones' : 'actualización'}</span></div>
+          ${tarjetas.map(l => this._opCardHtml(l, editable)).join('')}
         </div>`;
     }).join('');
 
@@ -355,9 +454,15 @@ const Novedades = {
       if (e.target.classList?.contains('nv-foto')) { this._verFoto(e.target.src); return; }
       const del = e.target.closest('[data-del]')?.dataset.del;
       if (del) { this._quitar(del); return; }
-      const a = e.target.closest('[data-a]')?.dataset.a;
+      const btn = e.target.closest('[data-a]');
+      const a = btn?.dataset.a;
       if (a === 'close') this.close();
       else if (a === 'print') this._print();
+      else if (a === 'mas') {
+        const id = btn.dataset.op;
+        if (this._abiertas.has(id)) this._abiertas.delete(id); else this._abiertas.add(id);
+        this._refresh(true);
+      }
       else if (a === 'todos')   { this._excluir.clear(); this._refresh(); }
       else if (a === 'ninguno') { this._projNombres().forEach(p => this._excluir.add(p)); this._refresh(); }
     });
