@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 
 const Novedades = {
-  _periodo:  '7',            // 'ultima' | 'hoy' | '7' | '14' | '30' | 'rango'
+  _periodo:  'hoy',          // 'hoy' | '7' | '14' | '30' | 'rango'
   _desde:    '',
   _hasta:    '',
   _excluir:  new Set(),      // proyectos que se quitan del informe
@@ -26,7 +26,7 @@ const Novedades = {
     this._ensureCss();
     this._excluir = new Set();
     this._abiertas = new Set();
-    this._periodo = this._ultimaImpresion() ? 'ultima' : '7';
+    this._periodo = 'hoy';
     this._desde = this._hasta = '';
     this._build();
     this._cargarCambios().then(() => this._refresh());
@@ -53,8 +53,6 @@ const Novedades = {
     }
     if (this._periodo === 'hoy') {
       from = new Date(); from.setHours(0, 0, 0, 0);   // desde las 12:00 a. m. de hoy
-    } else if (this._periodo === 'ultima') {
-      from = this._ultimaImpresion() || new Date(Date.now() - 7 * 86400000);
     } else {
       from = new Date(Date.now() - parseInt(this._periodo, 10) * 86400000);
     }
@@ -459,10 +457,7 @@ const Novedades = {
   _refreshOpciones() {
     const sel = document.getElementById('nv-periodo');
     if (!sel) return;
-    const ult = this._ultimaImpresion();
-    const f = d => `${this._fmtFecha(d)}, ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
     sel.innerHTML = `
-      <option value="ultima">Desde la última impresión${ult ? ` (${f(ult)})` : ' (aún no hay: usa 7 días)'}</option>
       <option value="hoy">Hoy</option>
       <option value="7">Últimos 7 días</option>
       <option value="14">Últimos 14 días</option>
