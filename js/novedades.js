@@ -210,8 +210,8 @@ const Novedades = {
 .nv-sub{color:#555;font-size:9pt}
 .nv-foto{display:block;margin-top:4px;max-width:220px;max-height:160px;border:.5pt solid #bbb}
 .nv-foot{margin-top:14px;font-size:8pt;color:#999;text-align:right}
-.nv-op{border:1px solid #d8d2cb;border-top:none;padding:9px 12px;background:#fff;break-inside:avoid}
-.nv-op-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.nv-op{border:1px solid #cfc8bf;border-left:5px solid #8B1A1A;border-radius:4px;padding:10px 12px 8px;margin:12px 0 0;background:#fff;break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.nv-op-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;padding-bottom:7px;margin-bottom:8px;border-bottom:1.5px solid #8B1A1A}
 .nv-op-n{font-size:10.5pt}
 .nv-op-n b{color:#8B1A1A}
 .nv-chip{font-size:8pt;background:#f1ede7;color:#555;padding:1px 8px;border-radius:10px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -236,18 +236,6 @@ const Novedades = {
 `;
   },
 
-  // Cómo está la OP ahora (estatus, avance e instaladores), para la línea "Ahora:" de cada tarjeta.
-  _ahora(op) {
-    const partes = [];
-    const est = String(op.estatusInstalacion || '').trim();
-    if (est) partes.push(est.toLowerCase());
-    const fila = Instalacion._installRow ? Instalacion._installRow(op.id) : null;
-    if (fila && this._tiene(fila.porcentaje)) partes.push(fila.porcentaje + '%');
-    const inst = Instalacion._instaladoresFor ? Instalacion._instaladoresFor(op.id) : [];
-    if (inst.length) partes.push((inst.length > 1 ? 'instaladores ' : 'instalador ') + inst.join(', '));
-    return partes.join(' · ');
-  },
-
   // "Antes → Después" si había un antes; solo el valor nuevo si no lo había.
   _valorHtml(e) {
     if (e.despues === undefined) return esc(e.text || '');
@@ -266,7 +254,6 @@ const Novedades = {
     const cambios = list.filter(e => e.grupo !== 'nota').sort((a, b) => b.ts - a.ts);
     const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
     const resumen = [cambios.length ? plural(cambios.length, 'cambio', 'cambios') : '', notas.length ? plural(notas.length, 'comentario', 'comentarios') : ''].filter(Boolean).join(' · ');
-    const ahora = this._ahora(op);
     const del = e => editable ? `<button class="nv-del" data-del="${esc(e.key)}" title="Quitar del informe">✕</button>` : '';
 
     const coms = notas.map(e => `
@@ -297,7 +284,6 @@ const Novedades = {
     return `
       <div class="nv-op${plegable && !abierta ? ' nv-plegada' : ''}">
         <div class="nv-op-h"><div class="nv-op-n"><b>${esc(op.noOp || '—')}</b> · ${esc(op.name)}</div><span class="nv-chip">${resumen}</span></div>
-        ${ahora ? `<div class="nv-now">Ahora: ${esc(ahora)}</div>` : ''}
         ${coms}${tabla}${mas}
       </div>`;
   },
