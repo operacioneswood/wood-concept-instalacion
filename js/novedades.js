@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 
 const Novedades = {
-  _periodo:  '7',            // 'ultima' | '7' | '14' | '30' | 'rango'
+  _periodo:  '7',            // 'ultima' | 'hoy' | '7' | '14' | '30' | 'rango'
   _desde:    '',
   _hasta:    '',
   _excluir:  new Set(),      // proyectos que se quitan del informe
@@ -51,7 +51,9 @@ const Novedades = {
       const h = this._hasta ? new Date(this._hasta + 'T23:59:59') : to;
       return { from, to: h };
     }
-    if (this._periodo === 'ultima') {
+    if (this._periodo === 'hoy') {
+      from = new Date(); from.setHours(0, 0, 0, 0);   // desde las 12:00 a. m. de hoy
+    } else if (this._periodo === 'ultima') {
       from = this._ultimaImpresion() || new Date(Date.now() - 7 * 86400000);
     } else {
       from = new Date(Date.now() - parseInt(this._periodo, 10) * 86400000);
@@ -461,6 +463,7 @@ const Novedades = {
     const f = d => `${this._fmtFecha(d)}, ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
     sel.innerHTML = `
       <option value="ultima">Desde la última impresión${ult ? ` (${f(ult)})` : ' (aún no hay: usa 7 días)'}</option>
+      <option value="hoy">Hoy</option>
       <option value="7">Últimos 7 días</option>
       <option value="14">Últimos 14 días</option>
       <option value="30">Últimos 30 días</option>
